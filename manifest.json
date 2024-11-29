@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Telegram Message Monitor",
+  "version": "1.0",
+  "description": "Monitor Telegram Web messages for keywords and show notifications",
+  "permissions": [
+    "notifications",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://web.telegram.org/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "eye_icon_16.png",
+      "48": "eye_icon_48.png",
+      "128": "eye_icon_128.png"
+    }
+  },
+  "icons": {
+    "16": "eye_icon_16.png",
+    "48": "eye_icon_48.png",
+    "128": "eye_icon_128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.telegram.org/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [{
+    "resources": ["eye_icon_48.png", "notification.mp3"],
+    "matches": ["https://web.telegram.org/*"]
+  }]
+}

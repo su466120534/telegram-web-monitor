@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 300px;
+      padding: 10px;
+      font-family: Arial, sans-serif;
+    }
+    .keyword-list {
+      margin: 10px 0;
+      max-height: 150px;
+      overflow-y: auto;
+      border: 1px solid #eee;
+      padding: 5px;
+    }
+    .keyword-item {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0;
+      padding: 5px;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #0088cc;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button:hover {
+      background-color: #006699;
+    }
+    .delete-btn {
+      color: #ff4444;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0 5px;
+    }
+    .status-section {
+      margin: 15px 0;
+      padding: 10px 0;
+      border-top: 1px solid #eee;
+      border-bottom: 1px solid #eee;
+    }
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+    }
+    .status-active {
+      background-color: #2ecc71;
+    }
+    .status-inactive {
+      background-color: #e74c3c;
+    }
+    .message-list {
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .message {
+      padding: 8px;
+      margin-bottom: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #f9f9f9;
+    }
+    .message.unread {
+      background: #e3f2fd;
+    }
+    .message-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .message-time {
+      font-size: 0.8em;
+      color: #666;
+    }
+    .message-content {
+      margin-top: 4px;
+      word-break: break-word;
+    }
+    #toggleMonitor {
+      width: 100%;
+      margin-top: 10px;
+      font-weight: bold;
+      transition: all 0.3s ease;
+    }
+    #toggleMonitor.active {
+      background-color: #e74c3c;  /* red */
+    }
+    #toggleMonitor.active:hover {
+      background-color: #c0392b;  /* dark red */
+    }
+    .controls {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 10px;
+    }
+    
+    #clearMessages {
+      background-color: #95a5a6;  /* gray button */
+      font-size: 0.9em;
+      padding: 5px 10px;
+    }
+    
+    #clearMessages:hover {
+      background-color: #7f8c8d;
+    }
+  </style>
+</head>
+<body>
+  <h2>Telegram Message Monitor</h2>
+  <div class="status-section">
+    <div>
+      <span class="status-indicator" id="statusIndicator"></span>
+      <span id="statusText">Checking status...</span>
+    </div>
+    <button id="toggleMonitor">Start Monitor</button>
+  </div>
+  <div>
+    <input type="text" id="keywordInput" placeholder="Enter keyword to monitor">
+    <button id="addKeyword">Add Keyword</button>
+  </div>
+  <div class="keyword-list" id="keywordList">
+    <!-- Keywords will be displayed here -->
+  </div>
+  <div class="controls">
+    <button id="clearMessages">Clear Messages</button>
+  </div>
+  <div class="message-list" id="messageList">
+    <!-- Matched messages will be displayed here -->
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
