@@ -177,15 +177,45 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
 
+      // 在 popup.js 中修改消息渲染部分
+      function createClickableLinks(text) {
+        // 匹配 URL 的正则表达式
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        return text.replace(urlRegex, url => `<a href="${url}" target="_blank" class="message-link">${url}</a>`);
+      }
+
+      // 修改消息渲染部分
       response.messages.reverse().forEach((msg, index) => {
         const div = document.createElement('div');
         div.className = `message ${msg.read ? '' : 'unread'}`;
+        
+        // 解析消息内容
+        const messageLines = msg.message.split('\n');
+        const messageContent = messageLines.map(line => {
+          if (line.startsWith('👤')) return `<div class="message-meta">${line}</div>`;
+          if (line.startsWith('💬')) {
+            // 处理消息内容，使链接可点击
+            const messageText = line.replace('💬 Message: ', '');
+            return `<div class="message-content">💬 Message: ${createClickableLinks(messageText)}</div>`;
+          }
+          if (line.startsWith('🕒')) return `<div class="message-time">${line}</div>`;
+          return `<div>${createClickableLinks(line)}</div>`;
+        }).join('');
+
         div.innerHTML = `
           <div class="message-title">${msg.title}</div>
-          <div class="message-time">${msg.timestamp}</div>
-          <div class="message-content">${msg.message}</div>
+          ${messageContent}
         `;
         
+        // 添加链接点击处理
+        div.querySelectorAll('a').forEach(link => {
+          link.addEventListener('click', (e) => {
+            e.stopPropagation(); // 阻止事件冒泡，这样点击链接不会触发消息已读
+            chrome.tabs.create({ url: link.href });
+          });
+        });
+        
+        // 消息点击处理（标记为已读）
         div.addEventListener('click', () => {
           chrome.runtime.sendMessage({ 
             type: 'markAsRead', 

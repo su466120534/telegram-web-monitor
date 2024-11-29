@@ -13,6 +13,21 @@ let isInitializing = false;
 let lastUrl = location.href;
 let isMonitoringActive = false;
 let audioContext = null;
+let hasUserInteracted = false;
+let audio = null;
+let lastCheckTime = Date.now();
+let lastHeartbeat = Date.now();
+const HEARTBEAT_INTERVAL = 60000; // 1分钟
+
+// 添加用户交互检测
+document.addEventListener('click', () => {
+  hasUserInteracted = true;
+  // 初始化音频
+  if (!audio) {
+    audio = new Audio(chrome.runtime.getURL('notification.mp3'));
+    audio.volume = 0.3; // 设置适中的音量
+  }
+}, { once: true }); // 只需要检测一次用户交互
 
 // 获取关键词列表
 async function getKeywords() {
@@ -29,14 +44,28 @@ async function showNotification(text, messageInfo = null, isBatchScan = false) {
   try {
     console.log('Telegram Monitor: Attempting to show notification for:', text);
     
-    const message = messageInfo ? 
-      `Chat: ${messageInfo.chatTitle}\nFrom: ${messageInfo.sender}\nContent: ${text}` : 
-      `Content: ${text}\nTime: ${new Date().toLocaleString()}`;
+    // 格式化消息内容，移除群聊名称
+    let formattedMessage;
+    if (messageInfo) {
+      // 限制消息长度，避免过长
+      const truncatedText = text.length > 100 ? text.substring(0, 97) + '...' : text;
+      formattedMessage = [
+        `👤 From: ${messageInfo.sender}`,
+        `💬 Message: ${truncatedText}`,
+        `🕒 Time: ${messageInfo.timestamp}`
+      ].join('\n');
+    } else {
+      const truncatedText = text.length > 100 ? text.substring(0, 97) + '...' : text;
+      formattedMessage = [
+        `💬 Message: ${truncatedText}`,
+        `🕒 Time: ${new Date().toLocaleString()}`
+      ].join('\n');
+    }
 
     const notificationOptions = {
       type: 'basic',
-      title: 'Keyword Match Found',
-      message: message,
+      title: '🔍 Keyword Match Found',
+      message: formattedMessage,
       requireInteraction: true
     };
 
@@ -59,11 +88,18 @@ async function showNotification(text, messageInfo = null, isBatchScan = false) {
 // 处理消息文本
 async function processMessageText(text) {
   if (!isMonitoringActive || !text) {
-    console.log('Telegram Monitor: Skipping message processing - monitoring inactive or empty text');
+    console.log('Telegram Monitor: Skipping message - monitoring inactive or empty text');
     return;
   }
 
-  console.log('Telegram Monitor: Processing new message:', text.substring(0, 100));
+  console.log('Telegram Monitor: Processing message:', {
+    time: new Date().toLocaleString(),
+    textPreview: text.substring(0, 100),
+    monitorStatus: {
+      isMonitoring,
+      isMonitoringActive
+    }
+  });
   
   try {
     const keywords = await getKeywords();
@@ -73,12 +109,34 @@ async function processMessageText(text) {
     }
 
     console.log('Telegram Monitor: Checking against keywords:', keywords);
+    
+    // 处理组合关键词
     for (const keyword of keywords) {
-      if (text.toLowerCase().includes(keyword.toLowerCase())) {
-        console.log('Telegram Monitor: Match found! Keyword:', keyword);
-        console.log('Telegram Monitor: Matched message:', text);
-        await showNotification(text);
-        break;
+      // 检查是否是组合关键词（包含空格）
+      if (keyword.includes(' ')) {
+        const combinedKeywords = keyword.split(' ').filter(k => k); // 移除空字符串
+        console.log('Telegram Monitor: Checking combined keywords:', combinedKeywords);
+        
+        // 检查所有关键词是否都存在
+        const allKeywordsFound = combinedKeywords.every(k => 
+          text.toLowerCase().includes(k.toLowerCase())
+        );
+
+        if (allKeywordsFound) {
+          console.log('Telegram Monitor: Combined keywords match found:', {
+            keywords: combinedKeywords,
+            text: text.substring(0, 100)
+          });
+          await showNotification(text);
+          return;
+        }
+      } else {
+        // 单个关键词匹配
+        if (text.toLowerCase().includes(keyword.toLowerCase())) {
+          console.log('Telegram Monitor: Single keyword match found:', keyword);
+          await showNotification(text);
+          return;
+        }
       }
     }
   } catch (error) {
@@ -135,10 +193,21 @@ function extractMessageInfo(node) {
       }
     }
 
+    // 格式化时间
+    const now = new Date();
+    const timeString = now.toLocaleString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+
     return {
       chatTitle: chatTitle || 'Unknown Chat',
       sender: sender || 'Unknown Sender',
-      timestamp: new Date().toLocaleString()
+      timestamp: timeString
     };
   } catch (error) {
     console.error('Telegram Monitor: Error extracting message info:', error);
@@ -286,13 +355,26 @@ async function initMonitor() {
     // 设置新的观察器
     console.log('Telegram Monitor: Setting up mutation observer');
     observer = new MutationObserver((mutations) => {
-      console.log('Telegram Monitor: Detected DOM mutations:', mutations.length);
+      console.log('Telegram Monitor: Detected mutations:', {
+        time: new Date().toLocaleString(),
+        count: mutations.length,
+        details: mutations.map(m => ({
+          type: m.type,
+          addedNodes: m.addedNodes.length,
+          target: m.target.className
+        }))
+      });
+
       mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const text = node.textContent.trim();
             if (text) {
-              console.log('Telegram Monitor: New message detected:', text.substring(0, 100));
+              console.log('Telegram Monitor: New element:', {
+                text: text.substring(0, 100),
+                nodeType: node.nodeName,
+                className: node.className
+              });
               processMessageText(text);
             }
           }
@@ -367,59 +449,138 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// 定期检查监控状态
-setInterval(() => {
-  if (isMonitoringActive && !isMonitoring && !isInitializing) {
+// 添加心跳检测
+function heartbeat() {
+  const now = Date.now();
+  const timeSinceLastHeartbeat = now - lastHeartbeat;
+  console.log('Telegram Monitor: Heartbeat check:', {
+    timeSinceLastHeartbeat: timeSinceLastHeartbeat / 1000,
+    isMonitoring,
+    isMonitoringActive
+  });
+
+  // 如果超过2分钟没有心跳，重新初始化
+  if (timeSinceLastHeartbeat > 120000) {
+    console.log('Telegram Monitor: Heartbeat missed, reinitializing...');
     initMonitor();
   }
-}, CHECK_INTERVAL);
+  
+  lastHeartbeat = now;
+}
+
+setInterval(heartbeat, HEARTBEAT_INTERVAL);
+
+// 添加网络状态监控
+window.addEventListener('online', () => {
+  console.log('Telegram Monitor: Network connected');
+  if (isMonitoringActive) {
+    console.log('Telegram Monitor: Reinitializing after network recovery');
+    initMonitor();
+  }
+});
+
+window.addEventListener('offline', () => {
+  console.log('Telegram Monitor: Network disconnected');
+});
+
+// 添加定期完整扫描
+const FULL_SCAN_INTERVAL = 300000; // 5分钟
+
+setInterval(async () => {
+  if (isMonitoringActive && !document.hidden) {
+    console.log('Telegram Monitor: Performing periodic full scan');
+    await scanMessages();
+  }
+}, FULL_SCAN_INTERVAL);
+
+// 改进监控状态检查
+function checkMonitorStatus() {
+  const now = Date.now();
+  console.log('Telegram Monitor: Status check:', {
+    isMonitoring,
+    isMonitoringActive,
+    isInitializing,
+    observerActive: observer !== null,
+    timeSinceLastCheck: (now - lastCheckTime) / 1000,
+    timeSinceLastHeartbeat: (now - lastHeartbeat) / 1000,
+    time: new Date().toLocaleString()
+  });
+
+  // 检查 Telegram Web 连接状态
+  const connectionIndicator = document.querySelector('.connection-status');
+  if (connectionIndicator) {
+    console.log('Telegram Monitor: Telegram connection status:', connectionIndicator.textContent);
+  }
+
+  lastCheckTime = now;
+
+  if (isMonitoringActive && (!isMonitoring || !observer)) {
+    console.log('Telegram Monitor: Monitor needs restart');
+    initMonitor();
+  }
+}
+
+// 添加页面可见性监听（在文件末尾添加）
+document.addEventListener('visibilitychange', () => {
+  console.log('Telegram Monitor: Page visibility changed:', {
+    isVisible: !document.hidden,
+    time: new Date().toLocaleString()
+  });
+
+  if (!document.hidden && isMonitoringActive) {
+    // 页面变为可见时重新检查监控状态
+    checkMonitorStatus();
+  }
+});
+
+// 修改定期检查间隔（替换原有的 setInterval）
+setInterval(() => {
+  if (isMonitoringActive) {
+    checkMonitorStatus();
+    if (!isMonitoring && !isInitializing) {
+      initMonitor();
+    }
+  }
+}, 30000); // 每30秒检查一次
 
 // 监听来自 background 的音频播放请求
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'playSound') {
-    console.log('Telegram Monitor: Attempting to play sound');
+    console.log('Telegram Monitor: Attempting to play sound, user interaction status:', hasUserInteracted);
     
     try {
-      // 使用 Web Audio API
-      if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (!hasUserInteracted) {
+        console.log('Telegram Monitor: No user interaction yet, sound will be played after interaction');
+        return;
       }
 
-      // 创建振荡器
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
+      // 确保音频对象存在
+      if (!audio) {
+        audio = new Audio(chrome.runtime.getURL('notification.mp3'));
+        audio.volume = 0.5;
+      }
 
-      // 配置音频
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-      oscillator.frequency.exponentialRampToValueAtTime(500, audioContext.currentTime + 0.2);
-
-      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
-
-      // 连接节点
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      // 播放声音
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.2);
-
-      console.log('Telegram Monitor: Sound played successfully');
-    } catch (error) {
-      console.error('Telegram Monitor: Error playing sound:', error);
+      // 创建新的音频实例以确保每次都播放
+      const soundInstance = new Audio(chrome.runtime.getURL('notification.mp3'));
+      soundInstance.volume = 0.5;
       
-      // 如果 Web Audio API 失败，尝试使用通知
-      try {
-        // 发送无声通知
-        new Notification('New Message Alert', {
-          silent: false,
-          requireInteraction: false,
-          tag: 'sound-notification'
+      soundInstance.play()
+        .then(() => {
+          console.log('Telegram Monitor: Sound played successfully');
+        })
+        .catch(error => {
+          console.error('Telegram Monitor: Error playing sound:', error);
+          // 尝试使用系统通知作为后备
+          if (Notification.permission === 'granted') {
+            new Notification('New Message Alert', {
+              silent: false,
+              requireInteraction: false,
+              tag: 'sound-notification'
+            });
+          }
         });
-      } catch (notificationError) {
-        console.error('Telegram Monitor: Notification fallback failed:', notificationError);
-      }
+    } catch (error) {
+      console.error('Telegram Monitor: Error in sound playback:', error);
     }
   }
 });
@@ -428,3 +589,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 if (Notification.permission !== 'granted') {
   Notification.requestPermission();
 }
+
+// 添加更多的用户交互事件监听
+['click', 'keydown', 'mousedown', 'touchstart'].forEach(eventType => {
+  document.addEventListener(eventType, () => {
+    if (!hasUserInteracted) {
+      console.log('Telegram Monitor: User interaction detected');
+      hasUserInteracted = true;
+      // 预加载音频
+      audio = new Audio(chrome.runtime.getURL('notification.mp3'));
+      audio.load(); // 预加载音频
+      audio.volume = 0.5; // 设置更大的音量
+    }
+  }, { once: true });
+});

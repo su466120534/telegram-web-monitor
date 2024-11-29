@@ -74,26 +74,44 @@
       overflow-y: auto;
     }
     .message {
-      padding: 8px;
-      margin-bottom: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      background: #f9f9f9;
+      padding: 12px;
+      margin-bottom: 10px;
+      border: 1px solid #e1e1e1;
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      transition: all 0.2s ease;
     }
     .message.unread {
       background: #e3f2fd;
+      border-left: 4px solid #2196F3;
+    }
+    .message:hover {
+      box-shadow: 0 2px 5px rgba(0,0,0,0.15);
     }
     .message-title {
       font-weight: bold;
-      margin-bottom: 4px;
+      margin-bottom: 6px;
+      color: #1a73e8;
     }
     .message-time {
-      font-size: 0.8em;
+      font-size: 0.85em;
       color: #666;
+      margin-bottom: 6px;
     }
     .message-content {
-      margin-top: 4px;
+      margin-top: 6px;
       word-break: break-word;
+      line-height: 1.4;
+      color: #333;
+    }
+    .message-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+      font-size: 0.9em;
+      color: #666;
     }
     #toggleMonitor {
       width: 100%;
@@ -121,6 +139,17 @@
     
     #clearMessages:hover {
       background-color: #7f8c8d;
+    }
+    /* 添加链接样式 */
+    .message-link {
+      color: #2196F3;
+      text-decoration: none;
+      word-break: break-all;
+    }
+    
+    .message-link:hover {
+      text-decoration: underline;
+      color: #1976D2;
     }
   </style>
 </head>

@@ -35,6 +35,9 @@ With the increasing number of Telegram bots and message volume, it's becoming ha
    - Type a keyword in the input box
    - Press Enter or click "Add Keyword"
    - Add multiple keywords as needed
+   - For combined keywords (AND logic), use space between words
+     - Example: "binance api" will match messages containing both "binance" AND "api"
+     - Single keywords like "binance" or "api" will match independently
    - Click '×' next to a keyword to remove it
 
 ### Monitoring
@@ -65,6 +68,9 @@ You'll be notified of matching messages in several ways:
 - Keep Telegram Web open in a tab while monitoring
 - Check the extension regularly for matched messages
 - Use specific keywords to reduce false positives
+- Use space-separated keywords for more precise matching
+  - Example: "crypto trading" will only match messages containing both words
+  - This helps reduce irrelevant notifications
 
 ## Installation
 
@@ -108,6 +114,9 @@ You'll be notified of matching messages in several ways:
    - 在输入框中输入关键词
    - 按回车或点击"添加关键词"
    - 可以添加多个关键词
+   - 组合关键词（与逻辑）使用空格分隔
+     - 例如："币安 API" 将只匹配同时包含"币安"和"API"的消息
+     - 单个关键词如"币安"或"API"会独立匹配
    - 点击关键词旁的'×'可删除
 
 ### 监控
@@ -138,6 +147,9 @@ You'll be notified of matching messages in several ways:
 - 保持 Telegram Web 在标签页中打开
 - 定期检查插件是否有匹配消息
 - 使用具体的关键词以减少误匹配
+- 使用空格分隔的组合关键词实现精确匹配
+  - 例如："交易 机器人" 只会匹配同时包含这两个词的消息
+  - 这可以帮助减少不相关的通知
 
 ## License
 
