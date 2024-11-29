@@ -19,16 +19,52 @@ With the increasing number of Telegram bots and message volume, it's becoming ha
 - 🌐 Works in background
 - 🔄 Auto-scanning of existing messages
 
-## How It Works
+## Detailed Usage Guide
 
-1. Log in to Telegram Web (https://web.telegram.org)
-2. Pin this extension to your browser's toolbar
-3. Add keywords you want to monitor
-4. Start monitoring
-5. Get notified when keywords are detected:
-   - Red badge with number shows unread matches
-   - Sound notification (after first interaction)
-   - Message list in popup window
+### Initial Setup
+1. Download or clone this repository
+2. Open Chrome and go to `chrome://extensions/`
+3. Enable "Developer mode" (top right corner)
+4. Click "Load unpacked" and select the extension folder
+5. Pin the extension to your browser toolbar for easy access
+
+### Configuration
+1. Open Telegram Web (https://web.telegram.org)
+2. Click the extension icon in your browser toolbar
+3. Add keywords you want to monitor:
+   - Type a keyword in the input box
+   - Press Enter or click "Add Keyword"
+   - Add multiple keywords as needed
+   - Click '×' next to a keyword to remove it
+
+### Monitoring
+1. Click "Start Monitor" to begin monitoring
+2. The status indicator will turn green when active
+3. Keep the extension visible in your browser toolbar
+4. The extension will monitor both:
+   - New incoming messages
+   - Existing messages in the current chat
+
+### Notifications
+You'll be notified of matching messages in several ways:
+1. Visual Indicators:
+   - Red badge with number on extension icon
+   - List of matched messages in popup window
+2. Audio Alert:
+   - Sound notification after first user interaction
+   - Requires clicking anywhere on the webpage first
+
+### Managing Messages
+1. Click the extension icon to view matched messages
+2. Click "Clear Messages" to remove all notifications
+3. Click individual messages to mark them as read
+4. Badge count automatically updates as you read messages
+
+### Tips
+- Pin the extension to your toolbar for better visibility
+- Keep Telegram Web open in a tab while monitoring
+- Check the extension regularly for matched messages
+- Use specific keywords to reduce false positives
 
 ## Installation
 
@@ -36,13 +72,6 @@ With the increasing number of Telegram bots and message volume, it's becoming ha
 2. Open Chrome and go to `chrome://extensions/`
 3. Enable "Developer mode"
 4. Click "Load unpacked" and select the extension folder
-
-## Usage
-
-1. Click the extension icon in toolbar
-2. Add keywords to monitor
-3. Click "Start Monitor"
-4. Keep the extension visible in your browser for badge notifications
 
 ---
 
@@ -63,30 +92,52 @@ With the increasing number of Telegram bots and message volume, it's becoming ha
 - 🌐 后台持续工作
 - 🔄 自动扫描已有消息
 
-## 工作原理
+## 详细使用指南
 
-1. 登录 Telegram Web (https://web.telegram.org)
-2. 将插件固定在浏览器工具栏
-3. 添加需要监控的关键词
-4. 启动监控
-5. 关键词匹配时获得通知：
-   - 插件图标显示红色数字徽章
-   - 声音提示（需要首次交互后）
-   - 弹窗中显示消息列表
-
-## 安装方法
-
+### 初始设置
 1. 下载或克隆此仓库
 2. 打开 Chrome，访问 `chrome://extensions/`
-3. 开启"开发者模式"
-4. 点击"加载已解压的扩展程序"，选择���件文件夹
+3. 开启"开发者模式"（右上角）
+4. 点击"加载已解压的扩展程序"，选择插件文件夹
+5. 将插件固定在浏览器工具栏以方便访问
 
-## 使用方法
+### 配置
+1. 打开 Telegram Web (https://web.telegram.org)
+2. 点击浏览器工具栏中的插件图标
+3. 添加需要监控的关键词：
+   - 在输入框中输入关键词
+   - 按回车或点击"添加关键词"
+   - 可以添加多个关键词
+   - 点击关键词旁的'×'可删除
 
-1. 点击工具栏中的插件图标
-2. 添加需要监控的关键词
-3. 点击"启动监控"
-4. 保持插件在浏览器中可见以便查看通知
+### 监控
+1. 点击"启动监控"开始监控
+2. 状态指示器会变成绿色表示正在监控
+3. 保持插件在浏览器工具栏可见
+4. 插件会同时监控：
+   - 新收到的消息
+   - 当前聊天中的已有消息
+
+### 通知方式
+匹配到关键词时会通过多种方式通知：
+1. 视觉提示：
+   - 插件图标上显示红色数字徽章
+   - 弹窗中显示匹配消息列表
+2. 声音提示：
+   - 首次用户交互后会有声音提示
+   - 需要先点击网页任意位置
+
+### 消息管理
+1. 点击插件图标查看匹配的消息
+2. 点击"清空消息"可删除所有通知
+3. 点击单条消息可标记为已读
+4. 阅读消息后徽章数字会自动更新
+
+### 使用技巧
+- 将插件固定在工具栏以便查看通知
+- 保持 Telegram Web 在标签页中打开
+- 定期检查插件是否有匹配消息
+- 使用具体的关键词以减少误匹配
 
 ## License
 
@@ -94,4 +145,4 @@ MIT License
 
 ## Author
 
-[Your Name or GitHub Username] 
+[Jimmy Su](https://github.com/su466120534)
