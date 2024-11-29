@@ -267,16 +267,37 @@ async function scanMessages() {
           const text = message.textContent.trim();
           if (text) {
             console.log('Telegram Monitor: Checking message:', text.substring(0, 100));
-            const matched = keywords.some(keyword => 
-              text.toLowerCase().includes(keyword.toLowerCase())
-            );
+            
+            // 修改匹配逻辑，支持组合关键词
+            const matched = keywords.some(keyword => {
+              if (keyword.includes(' ')) {
+                // 组合关键词：所有词都必须匹配
+                const combinedKeywords = keyword.split(' ').filter(k => k);
+                return combinedKeywords.every(k => 
+                  text.toLowerCase().includes(k.toLowerCase())
+                );
+              } else {
+                // 单个关键词：直接匹配
+                return text.toLowerCase().includes(keyword.toLowerCase());
+              }
+            });
+
             if (matched) {
               const messageInfo = extractMessageInfo(message);
               matchedMessages.add(JSON.stringify({
                 text,
                 info: messageInfo
               }));
-              console.log('Telegram Monitor: Found matching message:', text);
+              console.log('Telegram Monitor: Found matching message:', {
+                text: text.substring(0, 100),
+                keywords: keywords.filter(keyword => {
+                  if (keyword.includes(' ')) {
+                    const parts = keyword.split(' ').filter(k => k);
+                    return parts.every(k => text.toLowerCase().includes(k.toLowerCase()));
+                  }
+                  return text.toLowerCase().includes(keyword.toLowerCase());
+                })
+              });
             }
           }
         });
