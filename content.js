@@ -29,14 +29,79 @@ document.addEventListener('click', () => {
   }
 }, { once: true }); // 只需要检测一次用户交互
 
+// 添加错误处理函数
+function handleExtensionError(error) {
+  if (error.message === 'Extension context invalidated') {
+    console.log('Telegram Monitor: Extension context invalidated, attempting to recover...');
+    
+    // 清理现有状态
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    isMonitoring = false;
+    isInitializing = false;
+    
+    // 延迟重新初始化
+    setTimeout(() => {
+      console.log('Telegram Monitor: Attempting to reinitialize...');
+      initMonitor();
+    }, 5000); // 5秒后尝试重新初始化
+    
+    return true;
+  }
+  return false;
+}
+
+// 修改 chrome.runtime.sendMessage 的调用
+async function sendMessageToBackground(message) {
+  try {
+    return new Promise((resolve, reject) => {
+      if (!chrome.runtime) {
+        reject(new Error('Extension context invalidated'));
+        return;
+      }
+      
+      chrome.runtime.sendMessage(message, response => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  } catch (error) {
+    if (!handleExtensionError(error)) {
+      console.error('Telegram Monitor: Message send error:', error);
+    }
+    throw error;
+  }
+}
+
 // 获取关键词列表
 async function getKeywords() {
-  return new Promise(resolve => {
-    chrome.storage.sync.get(['keywords'], function(result) {
-      console.log('Telegram Monitor: Current keywords:', result.keywords);
-      resolve(result.keywords || []);
+  try {
+    return new Promise((resolve, reject) => {
+      if (!chrome.storage) {
+        reject(new Error('Extension context invalidated'));
+        return;
+      }
+      
+      chrome.storage.sync.get(['keywords'], function(result) {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          console.log('Telegram Monitor: Current keywords:', result.keywords);
+          resolve(result.keywords || []);
+        }
+      });
     });
-  });
+  } catch (error) {
+    if (!handleExtensionError(error)) {
+      console.error('Telegram Monitor: Error getting keywords:', error);
+    }
+    return [];
+  }
 }
 
 // 显示通知
@@ -69,19 +134,15 @@ async function showNotification(text, messageInfo = null, isBatchScan = false) {
       requireInteraction: true
     };
 
-    chrome.runtime.sendMessage({
+    await sendMessageToBackground({
       type: 'showNotification',
       options: notificationOptions,
       isBatchScan: isBatchScan
-    }, response => {
-      if (chrome.runtime.lastError) {
-        console.error('Telegram Monitor: Notification error:', chrome.runtime.lastError);
-      } else {
-        console.log('Telegram Monitor: Notification sent:', response);
-      }
     });
   } catch (error) {
-    console.error('Telegram Monitor: Error showing notification:', error);
+    if (!handleExtensionError(error)) {
+      console.error('Telegram Monitor: Error showing notification:', error);
+    }
   }
 }
 
@@ -110,34 +171,40 @@ async function processMessageText(text) {
 
     console.log('Telegram Monitor: Checking against keywords:', keywords);
     
-    // 处理组合关键词
-    for (const keyword of keywords) {
-      // 检查是否是组合关键词（包含空格）
-      if (keyword.includes(' ')) {
-        const combinedKeywords = keyword.split(' ').filter(k => k); // 移除空字符串
-        console.log('Telegram Monitor: Checking combined keywords:', combinedKeywords);
-        
-        // 检查所有关键词是否都存在
-        const allKeywordsFound = combinedKeywords.every(k => 
-          text.toLowerCase().includes(k.toLowerCase())
-        );
+    // 修改匹配逻辑
+    let matched = false;
+    let matchedKeyword = '';
 
-        if (allKeywordsFound) {
-          console.log('Telegram Monitor: Combined keywords match found:', {
-            keywords: combinedKeywords,
+    for (const keyword of keywords) {
+      if (keyword.includes(' ')) {
+        // 组合关键词处理
+        const parts = keyword.split(' ').filter(k => k.trim());
+        const allPartsMatch = parts.every(part => 
+          text.toLowerCase().includes(part.toLowerCase())
+        );
+        
+        if (allPartsMatch) {
+          matched = true;
+          matchedKeyword = keyword;
+          console.log('Telegram Monitor: Combined keyword match found:', {
+            keyword: keyword,
+            parts: parts,
             text: text.substring(0, 100)
           });
-          await showNotification(text);
-          return;
+          break;
         }
-      } else {
-        // 单个关键词匹配
-        if (text.toLowerCase().includes(keyword.toLowerCase())) {
-          console.log('Telegram Monitor: Single keyword match found:', keyword);
-          await showNotification(text);
-          return;
-        }
+      } else if (text.toLowerCase().includes(keyword.toLowerCase())) {
+        // 单个关键词处理
+        matched = true;
+        matchedKeyword = keyword;
+        console.log('Telegram Monitor: Single keyword match found:', keyword);
+        break;
       }
+    }
+
+    if (matched) {
+      console.log('Telegram Monitor: Sending notification for matched keyword:', matchedKeyword);
+      await showNotification(text);
     }
   } catch (error) {
     console.error('Telegram Monitor: Error processing message:', error);
@@ -252,53 +319,54 @@ async function scanMessages() {
     }
 
     console.log('Telegram Monitor: Scanning with keywords:', keywords);
-
     const matchedMessages = new Set();
-    let foundMessages = false;
 
-    // 遍历所有可能的消息选择器
     for (const selector of messageSelectors) {
       const messages = document.querySelectorAll(selector);
       console.log(`Telegram Monitor: Found ${messages.length} messages with selector "${selector}"`);
       
       if (messages.length > 0) {
-        foundMessages = true;
         messages.forEach(message => {
           const text = message.textContent.trim();
-          if (text) {
-            console.log('Telegram Monitor: Checking message:', text.substring(0, 100));
-            
-            // 修改匹配逻辑，支持组合关键词
-            const matched = keywords.some(keyword => {
-              if (keyword.includes(' ')) {
-                // 组合关键词：所有词都必须匹配
-                const combinedKeywords = keyword.split(' ').filter(k => k);
-                return combinedKeywords.every(k => 
-                  text.toLowerCase().includes(k.toLowerCase())
-                );
-              } else {
-                // 单个关键词：直接匹配
-                return text.toLowerCase().includes(keyword.toLowerCase());
-              }
-            });
+          if (!text) return;
 
-            if (matched) {
-              const messageInfo = extractMessageInfo(message);
-              matchedMessages.add(JSON.stringify({
-                text,
-                info: messageInfo
-              }));
-              console.log('Telegram Monitor: Found matching message:', {
-                text: text.substring(0, 100),
-                keywords: keywords.filter(keyword => {
-                  if (keyword.includes(' ')) {
-                    const parts = keyword.split(' ').filter(k => k);
-                    return parts.every(k => text.toLowerCase().includes(k.toLowerCase()));
-                  }
-                  return text.toLowerCase().includes(keyword.toLowerCase());
-                })
-              });
+          console.log('Telegram Monitor: Checking message:', text.substring(0, 100));
+          
+          // 修改匹配逻辑
+          let matched = false;
+          let matchedKeyword = '';
+
+          for (const keyword of keywords) {
+            if (keyword.includes(' ')) {
+              // 组合关键词处理
+              const parts = keyword.split(' ').filter(k => k.trim());
+              const allPartsMatch = parts.every(part => 
+                text.toLowerCase().includes(part.toLowerCase())
+              );
+              
+              if (allPartsMatch) {
+                matched = true;
+                matchedKeyword = keyword;
+                break;
+              }
+            } else if (text.toLowerCase().includes(keyword.toLowerCase())) {
+              // 单个关键词处理
+              matched = true;
+              matchedKeyword = keyword;
+              break;
             }
+          }
+
+          if (matched) {
+            console.log('Telegram Monitor: Match found:', {
+              keyword: matchedKeyword,
+              text: text.substring(0, 100)
+            });
+            const messageInfo = extractMessageInfo(message);
+            matchedMessages.add(JSON.stringify({
+              text,
+              info: messageInfo
+            }));
           }
         });
       }
@@ -307,7 +375,6 @@ async function scanMessages() {
     const results = Array.from(matchedMessages).map(msg => JSON.parse(msg));
     console.log('Telegram Monitor: Scan complete, found matches:', results.length);
     
-    // 如果找到匹配的消息，发送通知
     results.forEach(result => {
       showNotification(result.text, result.info, true);
     });
@@ -556,6 +623,8 @@ document.addEventListener('visibilitychange', () => {
 
 // 修改定期检查间隔（替换原有的 setInterval）
 setInterval(() => {
+  if (!checkExtensionContext()) return;
+  
   if (isMonitoringActive) {
     checkMonitorStatus();
     if (!isMonitoring && !isInitializing) {
@@ -634,3 +703,13 @@ window.addEventListener('load', () => {
     }
   });
 });
+
+// 添加扩展状态检查
+function checkExtensionContext() {
+  if (!chrome.runtime) {
+    console.log('Telegram Monitor: Extension context lost, reloading page...');
+    window.location.reload();
+    return false;
+  }
+  return true;
+}
