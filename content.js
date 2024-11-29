@@ -386,22 +386,18 @@ async function scanMessages() {
           }
 
           if (matched) {
-            // 只处理新的消息
-            if (messageTime > lastProcessedTime) {
-              console.log('Telegram Monitor: Match found:', {
-                keyword: matchedKeyword,
-                text: text.substring(0, 100),
-                timeSinceLastProcess: (currentTime - lastProcessedTime) / 1000
-              });
-              const messageInfo = extractMessageInfo(message);
-              matchedMessages.add(JSON.stringify({
-                text,
-                info: messageInfo
-              }));
-              lastProcessedTime = currentTime;
-            } else {
-              console.log('Telegram Monitor: Skipping old message:', text.substring(0, 100));
-            }
+            // 使用 currentTime 而不是未定义的 messageTime
+            console.log('Telegram Monitor: Match found:', {
+              keyword: matchedKeyword,
+              text: text.substring(0, 100),
+              timeSinceLastProcess: (currentTime - lastProcessedTime) / 1000
+            });
+            const messageInfo = extractMessageInfo(message);
+            matchedMessages.add(JSON.stringify({
+              text,
+              info: messageInfo
+            }));
+            lastProcessedTime = currentTime;
           }
         });
       }
