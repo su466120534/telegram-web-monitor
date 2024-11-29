@@ -1,4 +1,4 @@
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   console.log('Telegram Monitor Popup: Initializing...');
   
   // 获取 DOM 元素并添加错误检查
@@ -164,12 +164,34 @@ document.addEventListener('DOMContentLoaded', function() {
   checkMonitorStatus();
   console.log('Telegram Monitor Popup: Initialization complete');
 
-  // 加载消息列表
-  const messageList = document.getElementById('messageList');
-  if (messageList) {
-    chrome.runtime.sendMessage({ type: 'getMessages' }, response => {
-      if (!response || !response.messages) return;
-      
+  // 添加 createClickableLinks 函数
+  function createClickableLinks(text) {
+    // 匹配 URL 的正则表达式
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    return text.replace(urlRegex, url => `<a href="${url}" target="_blank" class="message-link">${url}</a>`);
+  }
+
+  // 修改 loadMessages 函数
+  async function loadMessages() {
+    console.log('Telegram Monitor Popup: Loading messages...');
+    const messageList = document.getElementById('messageList');
+    if (!messageList) return;
+
+    try {
+      // 获取消息
+      const response = await new Promise(resolve => {
+        chrome.runtime.sendMessage({ type: 'getMessages' }, resolve);
+      });
+
+      console.log('Telegram Monitor Popup: Got messages response:', response);
+
+      if (!response || !response.messages) {
+        console.log('Telegram Monitor Popup: No messages available');
+        messageList.innerHTML = '<div class="message">No matched messages</div>';
+        return;
+      }
+
+      // 清空现有消息
       messageList.innerHTML = '';
       
       if (response.messages.length === 0) {
@@ -177,45 +199,19 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
 
-      // 在 popup.js 中修改消息渲染部分
-      function createClickableLinks(text) {
-        // 匹配 URL 的正则表达式
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
-        return text.replace(urlRegex, url => `<a href="${url}" target="_blank" class="message-link">${url}</a>`);
-      }
-
-      // 修改消息渲染部分
+      // 渲染消息
       response.messages.reverse().forEach((msg, index) => {
         const div = document.createElement('div');
         div.className = `message ${msg.read ? '' : 'unread'}`;
         
-        // 解析消息内容
-        const messageLines = msg.message.split('\n');
-        const messageContent = messageLines.map(line => {
-          if (line.startsWith('👤')) return `<div class="message-meta">${line}</div>`;
-          if (line.startsWith('💬')) {
-            // 处理消息内容，使链接可点击
-            const messageText = line.replace('💬 Message: ', '');
-            return `<div class="message-content">💬 Message: ${createClickableLinks(messageText)}</div>`;
-          }
-          if (line.startsWith('🕒')) return `<div class="message-time">${line}</div>`;
-          return `<div>${createClickableLinks(line)}</div>`;
-        }).join('');
-
+        // 简化的消息渲染
         div.innerHTML = `
-          <div class="message-title">${msg.title}</div>
-          ${messageContent}
+          <div class="message-title">${msg.title || 'New Message'}</div>
+          <div class="message-content">${createClickableLinks(msg.message)}</div>
+          <div class="message-time">${msg.timestamp || new Date().toLocaleString()}</div>
         `;
         
-        // 添加链接点击处理
-        div.querySelectorAll('a').forEach(link => {
-          link.addEventListener('click', (e) => {
-            e.stopPropagation(); // 阻止事件冒泡，这样点击链接不会触发消息已读
-            chrome.tabs.create({ url: link.href });
-          });
-        });
-        
-        // 消息点击处理（标记为已读）
+        // 添加点击事件处理
         div.addEventListener('click', () => {
           chrome.runtime.sendMessage({ 
             type: 'markAsRead', 
@@ -226,8 +222,19 @@ document.addEventListener('DOMContentLoaded', function() {
         
         messageList.appendChild(div);
       });
-    });
+
+      console.log('Telegram Monitor Popup: Messages rendered successfully');
+    } catch (error) {
+      console.error('Telegram Monitor Popup: Error loading messages:', error);
+      messageList.innerHTML = '<div class="message">Error loading messages</div>';
+    }
   }
+
+  // 初始化时立即加载消息
+  loadMessages();
+
+  // 定期刷新消息列表（可选）
+  setInterval(loadMessages, 2000); // 每2秒更新一次
 
   // 添加清空按钮功能
   const clearMessagesBtn = document.getElementById('clearMessages');

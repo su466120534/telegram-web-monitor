@@ -2,6 +2,16 @@
 let matchedMessages = [];
 let unreadCount = 0;
 
+// 初始化函数
+function initializeState() {
+  matchedMessages = [];
+  unreadCount = 0;
+  chrome.action.setBadgeText({ text: '' });
+}
+
+// 在扩展启动时初始化状态
+initializeState();
+
 // 播放提示音
 function playNotificationSound() {
   try {
@@ -41,11 +51,10 @@ async function createNotification(options) {
     });
     
     // 更新未读计数
-    unreadCount++;
+    unreadCount = matchedMessages.filter(msg => !msg.read).length;
     
     // 更新插件图标上的数字
-    chrome.action.setBadgeText({ text: unreadCount.toString() });
-    chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
+    updateBadge();
 
     // 播放提示音
     playNotificationSound();
@@ -57,6 +66,23 @@ async function createNotification(options) {
     return { success: false, error };
   }
 }
+
+// 更新徽章显示
+function updateBadge() {
+  const count = matchedMessages.filter(msg => !msg.read).length;
+  chrome.action.setBadgeText({ 
+    text: count > 0 ? count.toString() : '' 
+  });
+  chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
+}
+
+// 监听标签页更新
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.url?.includes('web.telegram.org')) {
+    console.log('Telegram Monitor BG: Tab updated, reinitializing state');
+    initializeState();
+  }
+});
 
 // 获取未读消息
 function getUnreadMessages() {
@@ -101,6 +127,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
 
     case 'getMessages':
+      console.log('Telegram Monitor BG: Sending messages:', matchedMessages);
       sendResponse({ messages: matchedMessages });
       return false;
 
@@ -111,6 +138,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case 'clearMessages':
       clearAllMessages();
+      sendResponse({ success: true });
+      return false;
+
+    case 'initializeState':
+      initializeState();
       sendResponse({ success: true });
       return false;
   }

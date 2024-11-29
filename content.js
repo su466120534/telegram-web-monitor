@@ -603,3 +603,13 @@ if (Notification.permission !== 'granted') {
     }
   }, { once: true });
 });
+
+// 在页面加载时重置状态
+window.addEventListener('load', () => {
+  console.log('Telegram Monitor: Page loaded, initializing state');
+  chrome.runtime.sendMessage({ type: 'initializeState' }, response => {
+    if (response.success) {
+      console.log('Telegram Monitor: State initialized successfully');
+    }
+  });
+});
