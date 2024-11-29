@@ -18,6 +18,7 @@ let audio = null;
 let lastCheckTime = Date.now();
 let lastHeartbeat = Date.now();
 const HEARTBEAT_INTERVAL = 60000; // 1分钟
+let lastProcessedTime = Date.now();
 
 // 添加用户交互检测
 document.addEventListener('click', () => {
@@ -42,12 +43,8 @@ function handleExtensionError(error) {
     isMonitoring = false;
     isInitializing = false;
     
-    // 延迟重新初始化
-    setTimeout(() => {
-      console.log('Telegram Monitor: Attempting to reinitialize...');
-      initMonitor();
-    }, 5000); // 5秒后尝试重新初始化
-    
+    // 开始恢复过程
+    attemptRecovery();
     return true;
   }
   return false;
@@ -148,22 +145,43 @@ async function showNotification(text, messageInfo = null, isBatchScan = false) {
 
 // 处理消息文本
 async function processMessageText(text) {
-  if (!isMonitoringActive || !text) {
-    console.log('Telegram Monitor: Skipping message - monitoring inactive or empty text');
-    return;
-  }
-
-  console.log('Telegram Monitor: Processing message:', {
-    time: new Date().toLocaleString(),
-    textPreview: text.substring(0, 100),
-    monitorStatus: {
-      isMonitoring,
-      isMonitoringActive
-    }
-  });
-  
   try {
-    const keywords = await getKeywords();
+    // 首先检查扩展上下文
+    if (!chrome.runtime) {
+      console.log('Telegram Monitor: Extension context lost, waiting for recovery...');
+      return;
+    }
+
+    if (!isMonitoringActive || !text) {
+      console.log('Telegram Monitor: Skipping message - monitoring inactive or empty text');
+      return;
+    }
+
+    // 获取当前时间
+    const currentTime = Date.now();
+
+    console.log('Telegram Monitor: Processing message:', {
+      time: new Date().toLocaleString(),
+      textPreview: text.substring(0, 100),
+      timeSinceLastProcess: (currentTime - lastProcessedTime) / 1000,
+      monitorStatus: {
+        isMonitoring,
+        isMonitoringActive
+      }
+    });
+    
+    // 使用 try-catch 包装关键词获取
+    let keywords;
+    try {
+      keywords = await getKeywords();
+    } catch (error) {
+      if (error.message === 'Extension context invalidated') {
+        console.log('Telegram Monitor: Extension context lost during keyword fetch');
+        return;
+      }
+      throw error;
+    }
+
     if (!keywords || !keywords.length) {
       console.log('Telegram Monitor: No keywords set');
       return;
@@ -171,7 +189,6 @@ async function processMessageText(text) {
 
     console.log('Telegram Monitor: Checking against keywords:', keywords);
     
-    // 修改匹配逻辑
     let matched = false;
     let matchedKeyword = '';
 
@@ -203,10 +220,18 @@ async function processMessageText(text) {
     }
 
     if (matched) {
+      // 更新最后处理时间
+      lastProcessedTime = currentTime;
       console.log('Telegram Monitor: Sending notification for matched keyword:', matchedKeyword);
       await showNotification(text);
     }
   } catch (error) {
+    // 检查是否是扩展上下文失效错误
+    if (error.message === 'Extension context invalidated') {
+      console.log('Telegram Monitor: Extension context lost, will recover automatically');
+      // 不需要额外处理，因为扩展会自动重新加载
+      return;
+    }
     console.error('Telegram Monitor: Error processing message:', error);
   }
 }
@@ -318,6 +343,9 @@ async function scanMessages() {
       return [];
     }
 
+    const currentTime = Date.now();
+    console.log('Telegram Monitor: Starting scan, time since last scan:', (currentTime - lastProcessedTime) / 1000);
+
     console.log('Telegram Monitor: Scanning with keywords:', keywords);
     const matchedMessages = new Set();
 
@@ -358,15 +386,22 @@ async function scanMessages() {
           }
 
           if (matched) {
-            console.log('Telegram Monitor: Match found:', {
-              keyword: matchedKeyword,
-              text: text.substring(0, 100)
-            });
-            const messageInfo = extractMessageInfo(message);
-            matchedMessages.add(JSON.stringify({
-              text,
-              info: messageInfo
-            }));
+            // 只处理新的消息
+            if (messageTime > lastProcessedTime) {
+              console.log('Telegram Monitor: Match found:', {
+                keyword: matchedKeyword,
+                text: text.substring(0, 100),
+                timeSinceLastProcess: (currentTime - lastProcessedTime) / 1000
+              });
+              const messageInfo = extractMessageInfo(message);
+              matchedMessages.add(JSON.stringify({
+                text,
+                info: messageInfo
+              }));
+              lastProcessedTime = currentTime;
+            } else {
+              console.log('Telegram Monitor: Skipping old message:', text.substring(0, 100));
+            }
           }
         });
       }
@@ -712,4 +747,29 @@ function checkExtensionContext() {
     return false;
   }
   return true;
+}
+
+// 添加扩展状态恢复检查
+let recoveryAttempts = 0;
+const MAX_RECOVERY_ATTEMPTS = 3;
+const RECOVERY_INTERVAL = 5000;
+
+function attemptRecovery() {
+  if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
+    console.log('Telegram Monitor: Max recovery attempts reached');
+    return;
+  }
+
+  recoveryAttempts++;
+  console.log(`Telegram Monitor: Recovery attempt ${recoveryAttempts}`);
+
+  setTimeout(() => {
+    if (chrome.runtime) {
+      console.log('Telegram Monitor: Extension context restored');
+      recoveryAttempts = 0;
+      initMonitor();
+    } else {
+      attemptRecovery();
+    }
+  }, RECOVERY_INTERVAL);
 }
