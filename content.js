@@ -386,18 +386,26 @@ async function scanMessages() {
           }
 
           if (matched) {
-            // 使用 currentTime 而不是未定义的 messageTime
-            console.log('Telegram Monitor: Match found:', {
-              keyword: matchedKeyword,
-              text: text.substring(0, 100),
-              timeSinceLastProcess: (currentTime - lastProcessedTime) / 1000
-            });
+            // 检查是否是新消息
             const messageInfo = extractMessageInfo(message);
-            matchedMessages.add(JSON.stringify({
+            const messageData = {
               text,
-              info: messageInfo
-            }));
-            lastProcessedTime = currentTime;
+              info: messageInfo,
+              timestamp: Date.now() // 使用当前时间作为消息时间戳
+            };
+
+            // 只处理新消息或初次扫描
+            if (!initialScanDone || messageData.timestamp > lastProcessedTime) {
+              console.log('Telegram Monitor: Match found:', {
+                keyword: matchedKeyword,
+                text: text.substring(0, 100),
+                timeSinceLastProcess: (currentTime - lastProcessedTime) / 1000
+              });
+              matchedMessages.add(JSON.stringify(messageData));
+              lastProcessedTime = currentTime;
+            } else {
+              console.log('Telegram Monitor: Skipping old message:', text.substring(0, 100));
+            }
           }
         });
       }
@@ -406,6 +414,13 @@ async function scanMessages() {
     const results = Array.from(matchedMessages).map(msg => JSON.parse(msg));
     console.log('Telegram Monitor: Scan complete, found matches:', results.length);
     
+    // 更新初始扫描状态
+    if (!initialScanDone) {
+      initialScanDone = true;
+      console.log('Telegram Monitor: Initial scan completed');
+    }
+
+    // 发送通知
     results.forEach(result => {
       showNotification(result.text, result.info, true);
     });
