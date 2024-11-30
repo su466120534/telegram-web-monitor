@@ -282,27 +282,34 @@ function extractMessageInfo(node) {
 
 // 扫描现有消息
 async function scanMessages() {
-  console.log('Telegram Monitor: Starting to scan existing messages...');
-  
-  // 扩展消息选择器以适应版 Telegram Web
-  const messageSelectors = [
-    '.Message',
-    '.message',
-    '.bubble',
-    '.history-message',
-    '.im_message_text',
-    '.text-content',
-    '.message-content',
-    // 添加新的选择器
-    'div[class^="message"]',
-    '.text',
-    '.message-text-content',
-    '.text-entity',
-    '.message-text',
-    '.Message_message__text'
-  ];
-
   try {
+    // 首先检查扩展上下文
+    if (!chrome.runtime) {
+      console.log('Telegram Monitor: Extension context lost during scan, attempting recovery...');
+      attemptRecovery();
+      return [];
+    }
+
+    console.log('Telegram Monitor: Starting to scan existing messages...');
+    
+    // 扩展消息选择器以适应版 Telegram Web
+    const messageSelectors = [
+      '.Message',
+      '.message',
+      '.bubble',
+      '.history-message',
+      '.im_message_text',
+      '.text-content',
+      '.message-content',
+      // 添加新的选择器
+      'div[class^="message"]',
+      '.text',
+      '.message-text-content',
+      '.text-entity',
+      '.message-text',
+      '.Message_message__text'
+    ];
+
     // 等消息容器加载
     await new Promise(resolve => setTimeout(resolve, 2000));
 
@@ -393,6 +400,11 @@ async function scanMessages() {
 
     return results;
   } catch (error) {
+    if (error.message === 'Extension context invalidated') {
+      console.log('Telegram Monitor: Extension context lost during scan, will recover');
+      attemptRecovery();
+      return [];
+    }
     console.error('Telegram Monitor: Error scanning messages:', error);
     return [];
   }
@@ -437,7 +449,7 @@ async function initMonitor() {
     console.log('Telegram Monitor: Searching for chat container...');
     let chatContent = null;
     
-    // ��加重试循环
+    // 重试循环
     let retryAttempt = 0;
     const maxRetries = 3;
     
@@ -659,13 +671,11 @@ document.addEventListener('visibilitychange', () => {
 
 // 修改定期检查间隔（替换原有的 setInterval）
 setInterval(() => {
-  if (!checkExtensionContext()) return;
-  
   if (isMonitoringActive) {
-    checkMonitorStatus();
-    if (!isMonitoring && !isInitializing) {
-      initMonitor();
+    if (!checkExtensionContext()) {
+      return;
     }
+    checkMonitorStatus();
   }
 }, 30000); // 每30秒检查一次
 
@@ -743,8 +753,8 @@ window.addEventListener('load', () => {
 // 添加扩展状态检查
 function checkExtensionContext() {
   if (!chrome.runtime) {
-    console.log('Telegram Monitor: Extension context lost, reloading page...');
-    window.location.reload();
+    console.log('Telegram Monitor: Extension context lost, attempting recovery');
+    attemptRecovery();
     return false;
   }
   return true;
@@ -757,20 +767,31 @@ const RECOVERY_INTERVAL = 5000;
 
 function attemptRecovery() {
   if (recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
-    console.log('Telegram Monitor: Max recovery attempts reached');
+    console.log('Telegram Monitor: Max recovery attempts reached, will reload page');
+    window.location.reload();
     return;
   }
 
   recoveryAttempts++;
   console.log(`Telegram Monitor: Recovery attempt ${recoveryAttempts}`);
 
+  // 清理现有状态
+  if (observer) {
+    observer.disconnect();
+    observer = null;
+  }
+  isMonitoring = false;
+  isInitializing = false;
+
+  // 延迟重试
   setTimeout(() => {
     if (chrome.runtime) {
       console.log('Telegram Monitor: Extension context restored');
       recoveryAttempts = 0;
       initMonitor();
     } else {
-      attemptRecovery();
+      // 如果仍然没有恢复，重新加载页面
+      window.location.reload();
     }
   }, RECOVERY_INTERVAL);
 }
