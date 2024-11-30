@@ -157,27 +157,45 @@ async function processMessageText(text) {
     }
 
     // 改进的关键词匹配逻辑
+    let matched = false;
+    let matchedKeyword = '';
+
+    // 先检查组合关键词（更具体的匹配）
     for (const keyword of keywords) {
       if (keyword.includes(' ')) {
-        // 组合关键词必须所有部分都匹配
         const parts = keyword.split(' ').filter(k => k.trim());
         const allPartsMatch = parts.every(part => 
           text.toLowerCase().includes(part.toLowerCase())
         );
         
         if (allPartsMatch) {
-          lastProcessedTime = currentTime;
-          await showNotification(text);
-          break;
-        }
-      } else {
-        // 单个关键词匹配，只要包含就行
-        if (text.toLowerCase().includes(keyword.toLowerCase())) {
-          lastProcessedTime = currentTime;
-          await showNotification(text);
+          matched = true;
+          matchedKeyword = keyword;
           break;
         }
       }
+    }
+
+    // 如果组合关键词没有匹配，再检查单个关键词
+    if (!matched) {
+      for (const keyword of keywords) {
+        if (!keyword.includes(' ')) {
+          if (text.toLowerCase().includes(keyword.toLowerCase())) {
+            matched = true;
+            matchedKeyword = keyword;
+            break;
+          }
+        }
+      }
+    }
+
+    if (matched) {
+      console.log('Telegram Monitor: Keyword match found:', {
+        keyword: matchedKeyword,
+        text: text.substring(0, 100)
+      });
+      lastProcessedTime = currentTime;
+      await showNotification(text);
     }
   } catch (error) {
     if (error.message === 'Extension context invalidated') {
@@ -266,7 +284,7 @@ function extractMessageInfo(node) {
 async function scanMessages() {
   console.log('Telegram Monitor: Starting to scan existing messages...');
   
-  // 扩展消息选择器以适应新版 Telegram Web
+  // 扩展消息选择器以适应���版 Telegram Web
   const messageSelectors = [
     '.Message',
     '.message',
@@ -285,7 +303,7 @@ async function scanMessages() {
   ];
 
   try {
-    // 等���消息容器加载
+    // 等消息容器加载
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const keywords = await getKeywords();
@@ -435,31 +453,27 @@ async function initMonitor() {
     // 设置新的观察器
     console.log('Telegram Monitor: Setting up mutation observer');
     observer = new MutationObserver((mutations) => {
-      console.log('Telegram Monitor: Detected mutations:', {
-        time: new Date().toLocaleString(),
-        count: mutations.length,
-        details: mutations.map(m => ({
-          type: m.type,
-          addedNodes: m.addedNodes.length,
-          target: m.target.className
-        }))
-      });
-
-      mutations.forEach(mutation => {
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const text = node.textContent.trim();
-            if (text) {
-              console.log('Telegram Monitor: New element:', {
-                text: text.substring(0, 100),
-                nodeType: node.nodeName,
-                className: node.className
-              });
-              processMessageText(text);
-            }
-          }
+      try {
+        console.log('Telegram Monitor: Detected mutations:', {
+          time: new Date().toLocaleString(),
+          count: mutations.length
         });
-      });
+
+        mutations.forEach(mutation => {
+          mutation.addedNodes.forEach(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const text = node.textContent.trim();
+              if (text) {
+                processMessageText(text);
+              }
+            }
+          });
+        });
+      } catch (error) {
+        if (!handleTelegramError(error)) {
+          console.error('Telegram Monitor: Error in mutation observer:', error);
+        }
+      }
     });
     
     // 开始观察
@@ -774,3 +788,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 });
+
+// 添加错误处理函数
+function handleTelegramError(error) {
+  // 忽略 Telegram Web 内部错误
+  if (error && error.toString().includes('superMessagePort')) {
+    return true;
+  }
+  return false;
+}
