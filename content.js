@@ -284,7 +284,7 @@ function extractMessageInfo(node) {
 async function scanMessages() {
   console.log('Telegram Monitor: Starting to scan existing messages...');
   
-  // 扩展消息选择器以适应���版 Telegram Web
+  // 扩展消息选择器以适应版 Telegram Web
   const messageSelectors = [
     '.Message',
     '.message',
@@ -319,36 +319,56 @@ async function scanMessages() {
 
     for (const selector of messageSelectors) {
       const messages = document.querySelectorAll(selector);
-      console.log(`Telegram Monitor: Found ${messages.length} messages with selector "${selector}"`);
       
       if (messages.length > 0) {
         messages.forEach(message => {
           const text = message.textContent.trim();
           if (!text) return;
 
-          // 使用相同的改进匹配逻辑
-          for (const keyword of keywords) {
-            let matched = false;
+          // 使用与 processMessageText 相同的匹配逻辑
+          let matched = false;
+          let matchedKeyword = '';
 
+          // 先检查组合关键词
+          for (const keyword of keywords) {
             if (keyword.includes(' ')) {
-              // 组合关键词匹配
               const parts = keyword.split(' ').filter(k => k.trim());
-              matched = parts.every(part => 
+              const allPartsMatch = parts.every(part => 
                 text.toLowerCase().includes(part.toLowerCase())
               );
-            } else {
-              // 单个关键词匹配，只要包含就行
-              matched = text.toLowerCase().includes(keyword.toLowerCase());
+              
+              if (allPartsMatch) {
+                matched = true;
+                matchedKeyword = keyword;
+                break;
+              }
             }
+          }
 
-            if (matched) {
-              const messageInfo = extractMessageInfo(message);
-              matchedMessages.add(JSON.stringify({
-                text,
-                info: messageInfo
-              }));
-              break;
+          // 如果组合关键词没有匹配，再检查单个关键词
+          if (!matched) {
+            for (const keyword of keywords) {
+              if (!keyword.includes(' ')) {
+                if (text.toLowerCase().includes(keyword.toLowerCase())) {
+                  matched = true;
+                  matchedKeyword = keyword;
+                  break;
+                }
+              }
             }
+          }
+
+          if (matched) {
+            console.log('Telegram Monitor: Match found:', {
+              keyword: matchedKeyword,
+              text: text.substring(0, 100)
+            });
+            const messageInfo = extractMessageInfo(message);
+            matchedMessages.add(JSON.stringify({
+              text,
+              info: messageInfo,
+              matchedKeyword // 添加匹配的关键词信息
+            }));
           }
         });
       }
@@ -363,9 +383,12 @@ async function scanMessages() {
       console.log('Telegram Monitor: Initial scan completed');
     }
 
-    // 发送通知
+    // 发送通知时包含匹配的关键词信息
     results.forEach(result => {
-      showNotification(result.text, result.info, true);
+      showNotification(result.text, {
+        ...result.info,
+        matchedKeyword: result.matchedKeyword
+      });
     });
 
     return results;
@@ -414,7 +437,7 @@ async function initMonitor() {
     console.log('Telegram Monitor: Searching for chat container...');
     let chatContent = null;
     
-    // 添加重试循环
+    // ��加重试循环
     let retryAttempt = 0;
     const maxRetries = 3;
     
