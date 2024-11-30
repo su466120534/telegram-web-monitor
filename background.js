@@ -145,6 +145,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       initializeState();
       sendResponse({ success: true });
       return false;
+
+    case 'resetExtension':
+      console.log('Telegram Monitor BG: Resetting extension...');
+      
+      // 清除所有消息
+      matchedMessages = [];
+      unreadCount = 0;
+      
+      // 清除徽章
+      chrome.action.setBadgeText({ text: '' });
+      
+      console.log('Telegram Monitor BG: Extension reset complete');
+      sendResponse({ success: true });
+      return false;
   }
 });
 

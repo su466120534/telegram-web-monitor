@@ -253,4 +253,36 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     });
   }
+
+  // 添加重置功能
+  const resetExtensionBtn = document.getElementById('resetExtension');
+  if (resetExtensionBtn) {
+    resetExtensionBtn.addEventListener('click', async function() {
+      console.log('Telegram Monitor Popup: Resetting extension...');
+      
+      try {
+        // 清除存储的关键词
+        await chrome.storage.sync.clear();
+        
+        // 停止监控
+        await chrome.storage.sync.set({ monitorActive: false });
+        
+        // 发送重置消息给 content script
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.url?.includes('web.telegram.org')) {
+          await chrome.tabs.sendMessage(tab.id, { type: 'resetExtension' });
+        }
+        
+        // 发送重置消息给 background script
+        await chrome.runtime.sendMessage({ type: 'resetExtension' });
+        
+        // 重新加载插件页面
+        window.location.reload();
+        
+        console.log('Telegram Monitor Popup: Extension reset complete');
+      } catch (error) {
+        console.error('Telegram Monitor Popup: Error resetting extension:', error);
+      }
+    });
+  }
 });

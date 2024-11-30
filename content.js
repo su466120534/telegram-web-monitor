@@ -285,7 +285,7 @@ async function scanMessages() {
   ];
 
   try {
-    // 等待消息容器加载
+    // 等���消息容器加载
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const keywords = await getKeywords();
@@ -749,3 +749,28 @@ const urlCheckInterval = setInterval(() => {
     }
   }
 }, 1000);
+
+// 添加重置处理
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'resetExtension') {
+    console.log('Telegram Monitor: Resetting extension state...');
+    
+    // 停止观察器
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    
+    // 重置所有状态
+    isMonitoring = false;
+    isMonitoringActive = false;
+    isInitializing = false;
+    initialScanDone = false;
+    lastProcessedTime = Date.now();
+    retryCount = 0;
+    recoveryAttempts = 0;
+    
+    console.log('Telegram Monitor: Extension state reset complete');
+    sendResponse({ success: true });
+  }
+});

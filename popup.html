@@ -151,6 +151,17 @@
       text-decoration: underline;
       color: #1976D2;
     }
+    /* 添加重置按钮样式 */
+    .reset-btn {
+      background-color: #e74c3c;  /* 红色按钮 */
+      margin-left: 10px;
+      font-size: 0.9em;
+      padding: 5px 10px;
+    }
+    
+    .reset-btn:hover {
+      background-color: #c0392b;
+    }
   </style>
 </head>
 <body>
@@ -171,6 +182,7 @@
   </div>
   <div class="controls">
     <button id="clearMessages">Clear Messages</button>
+    <button id="resetExtension" class="reset-btn">Reset Extension</button>
   </div>
   <div class="message-list" id="messageList">
     <!-- Matched messages will be displayed here -->
