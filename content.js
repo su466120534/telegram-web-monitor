@@ -103,18 +103,22 @@ async function findChatContainer(selectors) {
 // 辅助函数：设置观察器
 function setupObserver(container) {
   window.observer = new MutationObserver((mutations) => {
-    window.ErrorHandler.withContext(async () => {
+    try {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const text = node.textContent.trim();
             if (text) {
-              await window.MessageHandler.processMessage(text, node);
+              window.MessageHandler.processMessage(text, node).catch(error => {
+                console.error('Telegram Monitor: Error processing message:', error);
+              });
             }
           }
         }
       }
-    }, 'mutationObserver');
+    } catch (error) {
+      console.error('Telegram Monitor: Error in mutation observer:', error);
+    }
   });
 
   window.observer.observe(container, {
@@ -123,7 +127,7 @@ function setupObserver(container) {
     characterData: true
   });
   
-  window.ErrorHandler.Logger.info('Observer started');
+  console.log('Telegram Monitor: Observer started');
 }
 
 // 辅助函数：重试初始化
@@ -136,32 +140,35 @@ function retryInitialization() {
 // 修改启动逻辑
 (async function initializeExtension() {
   try {
-    // 确保 ErrorHandler 已加载
-    if (!window.ErrorHandler) {
-      console.log('Waiting for ErrorHandler to load...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      if (!window.ErrorHandler) {
-        throw new Error('ErrorHandler not loaded');
+    // 等待所有模块加载完成
+    for (let i = 0; i < 10; i++) { // 最多尝试10次
+      if (window.ErrorHandler && window.StateManager && 
+          window.EventHandler && window.MessageHandler) {
+        break;
       }
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    window.ErrorHandler.Logger.info('Content script loaded at:', new Date().toLocaleString());
-
-    // 确保其他模块已加载
-    if (!window.StateManager || !window.EventHandler || !window.MessageHandler) {
-      window.ErrorHandler.Logger.info('Waiting for modules to load...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    // 检查必要的模块是否都已加载
+    if (!window.ErrorHandler || !window.StateManager || 
+        !window.EventHandler || !window.MessageHandler) {
+      throw new Error('Required modules not loaded');
     }
 
-    // 初始化顺序很重要
-    await window.ErrorHandler.withContext(async () => {
+    console.log('Telegram Monitor: Content script loaded at:', new Date().toLocaleString());
+
+    // 直接初始化各个模块，不使用 withContext
+    try {
       // 先初始化状态管理
       await window.StateManager.init();
       // 然后初始化事件处理
       await window.EventHandler.init();
       
-      window.ErrorHandler.Logger.info('Extension initialized successfully');
-    }, 'initialization');
+      console.log('Telegram Monitor: Extension initialized successfully');
+    } catch (initError) {
+      console.error('Telegram Monitor: Error during module initialization:', initError);
+      throw initError;
+    }
 
   } catch (error) {
     console.error('Error initializing extension:', error);
@@ -203,4 +210,5 @@ window.addEventListener('error', (event) => {
     attemptReconnect();
   }
 });
+
 

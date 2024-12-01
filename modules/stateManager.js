@@ -159,7 +159,7 @@ const StateManager = {
     }
     this._checkIntervals = [];
 
-    // 设置新的定时器，但要避免重复设置
+    // 设置心跳检查
     if (!this._heartbeatInterval) {
       this._heartbeatInterval = setInterval(() => {
         if (window.isMonitoringActive && window.isMonitoring) {
@@ -169,6 +169,7 @@ const StateManager = {
       this._checkIntervals.push(this._heartbeatInterval);
     }
 
+    // 设置状态检查
     if (!this._stateCheckInterval) {
       this._stateCheckInterval = setInterval(() => {
         if (window.isMonitoringActive) {
@@ -178,6 +179,7 @@ const StateManager = {
       this._checkIntervals.push(this._stateCheckInterval);
     }
 
+    // 设置消息清理
     if (!this._cleanupInterval) {
       this._cleanupInterval = setInterval(() => {
         if (window.isMonitoringActive) {
@@ -187,23 +189,19 @@ const StateManager = {
       this._checkIntervals.push(this._cleanupInterval);
     }
 
-    // 修改定期扫描的间隔和条件
+    // 修改扫描逻辑，只在有新消息时扫描
     if (!this._scanInterval) {
       this._scanInterval = setInterval(() => {
-        // 只在以下条件都满足时才扫描：
-        // 1. 监控激活
-        // 2. 页面可见
-        // 3. 距离上次扫描至少5分钟
-        // 4. 有新消息（通过DOM变化检测）
         if (window.isMonitoringActive && 
             !document.hidden && 
-            this.shouldScan()) {
-          window.ErrorHandler.Logger.info('Starting periodic scan');
-          window.MessageHandler.processMessages(
-            document.querySelectorAll(window.MessageHandler.selectors.messages.join(','))
-          );
+            this.hasNewMessages()) {
+          // 只扫描最近的消息
+          const messages = this.getRecentMessages();
+          if (messages.length > 0) {
+            window.MessageHandler.processMessages(messages);
+          }
         }
-      }, 300000); // 改为5分钟
+      }, 60000); // 改为1分钟检查一次
       this._checkIntervals.push(this._scanInterval);
     }
   },
@@ -220,15 +218,19 @@ const StateManager = {
   // 添加新消息检查方法
   hasNewMessages() {
     const lastScanTime = this._lastScanTime || 0;
-    const now = Date.now();
+    const currentTime = Date.now();
     
-    // 如果距离上次扫描不到1分钟，跳过
-    if (now - lastScanTime < 60000) {
+    // 如果距离上次扫描不到30秒，跳过
+    if (currentTime - lastScanTime < 30000) {
       return false;
     }
     
-    this._lastScanTime = now;
-    return true;
+    // 更新最后扫描时间
+    this._lastScanTime = currentTime;
+    
+    // 检查是否有新消息
+    const messages = this.getRecentMessages();
+    return messages.length > 0;
   },
 
   // 添加扫描判断方法
@@ -253,6 +255,49 @@ const StateManager = {
   destroy() {
     this.reset();
     this._initialized = false;
+  },
+
+  // 添加获取最近消息的方法
+  getRecentMessages() {
+    const messages = document.querySelectorAll(
+      window.MessageHandler.selectors.messages.join(',')
+    );
+    const lastScanTime = this._lastScanTime || 0;
+    const currentTime = Date.now();
+    
+    // 只返回上次扫描后的新消息
+    return Array.from(messages).filter(message => {
+      // 尝试从消息元素获取时间戳
+      const timeElement = message.querySelector('.time, .message-time');
+      if (timeElement) {
+        const messageTime = this.parseMessageTime(timeElement.textContent);
+        return messageTime > lastScanTime;
+      }
+      return false;
+    });
+  },
+
+  // 添加消息时间解析方法
+  parseMessageTime(timeString) {
+    try {
+      // 处理常见的时间格式
+      if (timeString.includes(':')) {
+        const now = new Date();
+        const [hours, minutes] = timeString.split(':').map(Number);
+        const messageDate = new Date(now);
+        messageDate.setHours(hours, minutes, 0, 0);
+        
+        // 如果时间比当前时间晚，说明是昨天的消息
+        if (messageDate > now) {
+          messageDate.setDate(messageDate.getDate() - 1);
+        }
+        
+        return messageDate.getTime();
+      }
+      return Date.now();
+    } catch (error) {
+      return Date.now();
+    }
   }
 };
 
