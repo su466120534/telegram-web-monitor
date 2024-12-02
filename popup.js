@@ -166,6 +166,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // 添加 createClickableLinks 函数
   function createClickableLinks(text) {
+    if (!text) return 'No content';
+    
     // 匹配 URL 的正则表达式
     const urlRegex = /(https?:\/\/[^\s]+)/g;
     return text.replace(urlRegex, url => `<a href="${url}" target="_blank" class="message-link">${url}</a>`);
@@ -204,11 +206,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         const div = document.createElement('div');
         div.className = `message ${msg.read ? '' : 'unread'}`;
         
-        // 简化的消息渲染
+        // 使用消息的实际属性
+        const messageContent = msg.text || msg.message || 'No content';
+        const messageTime = new Date(msg.timestamp).toLocaleString();
+        const messageKeyword = msg.keyword ? `Matched: "${msg.keyword}"` : '';
+        
         div.innerHTML = `
-          <div class="message-title">${msg.title || 'New Message'}</div>
-          <div class="message-content">${createClickableLinks(msg.message)}</div>
-          <div class="message-time">${msg.timestamp || new Date().toLocaleString()}</div>
+          <div class="message-title">🔍 ${messageKeyword}</div>
+          <div class="message-content">${createClickableLinks(messageContent)}</div>
+          <div class="message-time">${messageTime}</div>
         `;
         
         // 添加点击事件处理

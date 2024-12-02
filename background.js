@@ -17,7 +17,6 @@ async function playNotificationSound(tabId) {
   try {
     console.log('Telegram Monitor BG: Requesting sound playback');
     
-    // 发送消息给 content script 播放音频
     await chrome.tabs.sendMessage(tabId, {
       type: 'playSound'
     });
@@ -68,16 +67,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         updateBadge();
       }
 
-      // 添加到匹配消息列表
-      matchedMessages.push({
-        text: request.options.message,
-        timestamp: Date.now()
-      });
-
       sendResponse({ success: true });
       return true;
 
+    case 'addMessage':
+      // 添加新消息到列表
+      if (request.message) {
+        matchedMessages.push({
+          text: request.message.text,
+          timestamp: request.message.timestamp,
+          keyword: request.message.keyword,
+          originalText: request.message.originalText
+        });
+        console.log('Telegram Monitor BG: Added message:', request.message);
+      }
+      sendResponse({ success: true });
+      return false;
+
     case 'getMessages':
+      console.log('Telegram Monitor BG: Sending messages:', matchedMessages);
       sendResponse({ messages: matchedMessages });
       return false;
 
@@ -103,14 +111,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case 'resetExtension':
       console.log('Telegram Monitor BG: Resetting extension...');
-      
-      // 清除所有消息
-      matchedMessages = [];
-      unreadCount = 0;
-      
-      // 清除徽章
-      chrome.action.setBadgeText({ text: '' });
-      
+      initializeState();
       console.log('Telegram Monitor BG: Extension reset complete');
       sendResponse({ success: true });
       return false;
