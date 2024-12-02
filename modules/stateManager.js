@@ -188,22 +188,6 @@ const StateManager = {
       }, 3600000);
       this._checkIntervals.push(this._cleanupInterval);
     }
-
-    // 修改扫描逻辑，只在有新消息时扫描
-    if (!this._scanInterval) {
-      this._scanInterval = setInterval(() => {
-        if (window.isMonitoringActive && 
-            !document.hidden && 
-            this.hasNewMessages()) {
-          // 只扫描最近的消息
-          const messages = this.getRecentMessages();
-          if (messages.length > 0) {
-            window.MessageHandler.processMessages(messages);
-          }
-        }
-      }, 60000); // 改为1分钟检查一次
-      this._checkIntervals.push(this._scanInterval);
-    }
   },
 
   // 添加消息清理方法
@@ -217,20 +201,20 @@ const StateManager = {
 
   // 添加新消息检查方法
   hasNewMessages() {
-    const lastScanTime = this._lastScanTime || 0;
-    const currentTime = Date.now();
+    const currentMessageCount = this.getCurrentMessageCount();
+    const hasNew = currentMessageCount > (this._lastMessageCount || 0);
+    this._lastMessageCount = currentMessageCount;
+    return hasNew;
+  },
+
+  // 添加获取当前消息数量的方法
+  getCurrentMessageCount() {
+    const activeChat = document.querySelector('.chat-content, .messages-container, .history');
+    if (!activeChat) return 0;
     
-    // 如果距离上次扫描不到30秒，跳过
-    if (currentTime - lastScanTime < 30000) {
-      return false;
-    }
-    
-    // 更新最后扫描时间
-    this._lastScanTime = currentTime;
-    
-    // 检查是否有新消息
-    const messages = this.getRecentMessages();
-    return messages.length > 0;
+    return activeChat.querySelectorAll(
+      window.MessageHandler.selectors.messages.join(',')
+    ).length;
   },
 
   // 添加扫描判断方法
@@ -259,21 +243,20 @@ const StateManager = {
 
   // 添加获取最近消息的方法
   getRecentMessages() {
-    const messages = document.querySelectorAll(
+    const activeChat = document.querySelector('.chat-content, .messages-container, .history');
+    if (!activeChat) return [];
+
+    const messages = activeChat.querySelectorAll(
       window.MessageHandler.selectors.messages.join(',')
     );
-    const lastScanTime = this._lastScanTime || 0;
-    const currentTime = Date.now();
-    
-    // 只返回上次扫描后的新消息
+
+    // 只返回未处理的消息
     return Array.from(messages).filter(message => {
-      // 尝试从消息元素获取时间戳
-      const timeElement = message.querySelector('.time, .message-time');
-      if (timeElement) {
-        const messageTime = this.parseMessageTime(timeElement.textContent);
-        return messageTime > lastScanTime;
-      }
-      return false;
+      const text = message.textContent?.trim();
+      if (!text) return false;
+
+      const messageKey = window.MessageHandler.generateMessageKey(text, Date.now());
+      return !window.processedMessages.has(messageKey);
     });
   },
 

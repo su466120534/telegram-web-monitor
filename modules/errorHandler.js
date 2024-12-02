@@ -67,26 +67,101 @@ const ErrorHandler = {
     }
   },
 
+  // 添加 Telegram 内部错误过滤
+  isTelegramInternalError(error) {
+    const internalPatterns = [
+      'superMessagePort',
+      'VAPID key',
+      'WindowClient',
+      'MessagePort',
+      'cancelling all downloads',
+      'window connected',
+      'window disconnected'
+    ];
+
+    if (error instanceof Error) {
+      return internalPatterns.some(pattern => 
+        error.message.includes(pattern) || error.stack?.includes(pattern)
+      );
+    } else if (typeof error === 'string') {
+      return internalPatterns.some(pattern => error.includes(pattern));
+    }
+    return false;
+  },
+
   // 日志处理方法
   Logger: {
+    // 添加调试模式标志
+    debugMode: false, // 默认关闭调试模式
+
     info(message, data = null) {
-      const logMessage = `Telegram Monitor: ${message}`;
-      data ? console.log(logMessage, data) : console.log(logMessage);
+      // 过滤 Telegram 内部消息
+      if (this.shouldLog(message, data)) {
+        const logMessage = `Telegram Monitor: ${message}`;
+        data ? console.log(logMessage, data) : console.log(logMessage);
+      }
     },
 
     error(message, error = null) {
-      const logMessage = `Telegram Monitor: ${message}`;
-      error ? console.error(logMessage, error) : console.error(logMessage);
+      // 过滤 Telegram 内部错误
+      if (error && ErrorHandler.isTelegramInternalError(error)) {
+        return;
+      }
+      
+      if (error?.message === 'Extension context invalidated') {
+        this.info(message, error);
+      } else {
+        const logMessage = `Telegram Monitor: ${message}`;
+        error ? console.error(logMessage, error) : console.error(logMessage);
+      }
     },
 
     debug(message, data = null) {
-      const logMessage = `Telegram Monitor: ${message}`;
-      data ? console.debug(logMessage, data) : console.debug(logMessage);
+      if (this.debugMode && this.shouldLog(message, data)) {
+        const logMessage = `Telegram Monitor: ${message}`;
+        data ? console.debug(logMessage, data) : console.debug(logMessage);
+      }
     },
 
     warn(message, data = null) {
-      const logMessage = `Telegram Monitor: ${message}`;
-      data ? console.warn(logMessage, data) : console.warn(logMessage);
+      if (this.shouldLog(message, data)) {
+        const logMessage = `Telegram Monitor: ${message}`;
+        data ? console.warn(logMessage, data) : console.warn(logMessage);
+      }
+    },
+
+    // 添加日志过滤方法
+    shouldLog(message, data) {
+      const internalPatterns = [
+        'SW',
+        'VAPID',
+        'WindowClient',
+        'MessagePort',
+        'downloads',
+        'window connected',
+        'window disconnected'
+      ];
+
+      // 检查消息
+      if (internalPatterns.some(pattern => message.includes(pattern))) {
+        return false;
+      }
+
+      // 检查数据
+      if (data && typeof data === 'object') {
+        const dataString = JSON.stringify(data);
+        if (internalPatterns.some(pattern => dataString.includes(pattern))) {
+          return false;
+        }
+      }
+
+      return true;
+    },
+
+    // 添加设置调试模式的方法
+    setDebugMode(enabled) {
+      this.debugMode = enabled;
+      this.info(`Debug mode ${enabled ? 'enabled' : 'disabled'}`);
     }
   },
 
@@ -102,10 +177,19 @@ const ErrorHandler = {
     } catch (error) {
       // 处理错误
       if (error.message === 'Extension context invalidated') {
-        this.Logger.info(`Context invalidated in ${context}, attempting recovery...`);
+        // 使用普通日志记录上下文失效
+        console.log(`Telegram Monitor: Context invalidated in ${context}`);
+        
+        // 如果是观察器错误，不需要重复恢复
+        if (context === 'mutationObserver') {
+          return null;
+        }
+        
+        // 其他情况尝试恢复
         this.scheduleRecovery();
       } else {
-        this.Logger.error(`Error in ${context}:`, error);
+        // 其他错误使用 debug 级别记录，避免控制台出现太多错误
+        this.Logger.debug(`Error in ${context}:`, error);
       }
       return null;
     }
@@ -113,4 +197,7 @@ const ErrorHandler = {
 };
 
 // 导出模块
-window.ErrorHandler = ErrorHandler; 
+window.ErrorHandler = ErrorHandler;
+
+// 初始化时设置调试模式（默认关闭）
+ErrorHandler.Logger.setDebugMode(false); 

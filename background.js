@@ -13,100 +13,37 @@ function initializeState() {
 initializeState();
 
 // 播放提示音
-function playNotificationSound() {
+async function playNotificationSound(tabId) {
   try {
     console.log('Telegram Monitor BG: Requesting sound playback');
     
     // 发送消息给 content script 播放音频
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: 'playSound'
-        });
-      } else {
-        // 如果没有活动标签，使用系统通知
-        chrome.notifications.create('', {
-          type: 'basic',
-          title: 'New Message Alert',
-          message: 'New matching message detected',
-          iconUrl: chrome.runtime.getURL('eye_icon_48.png'),
-          silent: false
-        });
-      }
+    await chrome.tabs.sendMessage(tabId, {
+      type: 'playSound'
     });
   } catch (error) {
-    console.error('Telegram Monitor BG: Error in playNotificationSound:', error);
+    console.error('Telegram Monitor BG: Error playing sound:', error);
   }
 }
 
-// 创建通知
-async function createNotification(options) {
+// 显示系统通知
+async function showSystemNotification(options) {
   try {
-    // 存储消息
-    matchedMessages.push({
-      title: options.title,
-      message: options.message,
-      timestamp: new Date().toLocaleString(),
-      read: false
+    await chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'eye_icon_48.png',
+      ...options
     });
-    
-    // 更新未读计数
-    unreadCount = matchedMessages.filter(msg => !msg.read).length;
-    
-    // 更新插件图标上的数字
-    updateBadge();
-
-    // 播放提示音
-    playNotificationSound();
-    console.log('Telegram Monitor BG: Notification sound requested');
-
-    return Promise.resolve({ success: true, messageId: matchedMessages.length - 1 });
   } catch (error) {
-    console.error('Telegram Monitor BG: Error in createNotification:', error);
-    return { success: false, error };
+    console.error('Telegram Monitor BG: Error showing notification:', error);
   }
 }
 
-// 更新徽章显示
+// 更新徽章
 function updateBadge() {
-  const count = matchedMessages.filter(msg => !msg.read).length;
-  chrome.action.setBadgeText({ 
-    text: count > 0 ? count.toString() : '' 
-  });
+  const count = unreadCount > 0 ? unreadCount.toString() : '';
+  chrome.action.setBadgeText({ text: count });
   chrome.action.setBadgeBackgroundColor({ color: '#FF0000' });
-}
-
-// 监听标签页更新
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && tab.url?.includes('web.telegram.org')) {
-    console.log('Telegram Monitor BG: Tab updated, reinitializing state');
-    initializeState();
-  }
-});
-
-// 获取未读消息
-function getUnreadMessages() {
-  return matchedMessages.filter(msg => !msg.read);
-}
-
-// 标记消息为已读
-function markMessageAsRead(index) {
-  if (matchedMessages[index]) {
-    matchedMessages[index].read = true;
-    unreadCount = getUnreadMessages().length;
-    if (unreadCount === 0) {
-      chrome.action.setBadgeText({ text: '' });
-    } else {
-      chrome.action.setBadgeText({ text: unreadCount.toString() });
-    }
-  }
-}
-
-// 清除所有消息
-function clearAllMessages() {
-  matchedMessages = [];
-  unreadCount = 0;
-  chrome.action.setBadgeText({ text: '' });
 }
 
 // 监听来自 content script 的消息
@@ -115,29 +52,47 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   switch (request.type) {
     case 'showNotification':
-      createNotification(request.options)
-        .then(result => {
-          console.log('Telegram Monitor BG: Notification result:', result);
-          sendResponse(result);
+      // 显示系统通知
+      showSystemNotification(request.options)
+        .then(() => {
+          // 播放提示音
+          if (sender.tab?.id) {
+            return playNotificationSound(sender.tab.id);
+          }
         })
-        .catch(error => {
-          console.error('Telegram Monitor BG: Error:', error);
-          sendResponse({ success: false, error });
-        });
+        .catch(console.error);
+
+      // 更新未读消息计数
+      if (!request.isBatchScan) {
+        unreadCount++;
+        updateBadge();
+      }
+
+      // 添加到匹配消息列表
+      matchedMessages.push({
+        text: request.options.message,
+        timestamp: Date.now()
+      });
+
+      sendResponse({ success: true });
       return true;
 
     case 'getMessages':
-      console.log('Telegram Monitor BG: Sending messages:', matchedMessages);
       sendResponse({ messages: matchedMessages });
       return false;
 
-    case 'markAsRead':
-      markMessageAsRead(request.messageId);
+    case 'clearMessages':
+      matchedMessages = [];
+      unreadCount = 0;
+      updateBadge();
       sendResponse({ success: true });
       return false;
 
-    case 'clearMessages':
-      clearAllMessages();
+    case 'markAsRead':
+      if (unreadCount > 0) {
+        unreadCount--;
+        updateBadge();
+      }
       sendResponse({ success: true });
       return false;
 

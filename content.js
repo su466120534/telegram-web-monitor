@@ -100,24 +100,50 @@ async function findChatContainer(selectors) {
   return null;
 }
 
-// 辅助函数：设置观察器
+// 修改观察器设置函数
 function setupObserver(container) {
   window.observer = new MutationObserver((mutations) => {
     try {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            const text = node.textContent.trim();
-            if (text) {
-              window.MessageHandler.processMessage(text, node).catch(error => {
-                console.error('Telegram Monitor: Error processing message:', error);
+            // 查找消息内容
+            const messageElements = node.querySelectorAll(
+              window.MessageHandler.selectors.messages.join(',')
+            );
+            
+            // 如果找到消息元素，处理每个消息
+            if (messageElements.length > 0) {
+              messageElements.forEach(messageElement => {
+                const text = messageElement.textContent?.trim();
+                if (text) {
+                  window.MessageHandler.processMessage(text, messageElement)
+                    .catch(error => {
+                      if (!error.message.includes('Extension context invalidated')) {
+                        console.error('Telegram Monitor: Error processing message:', error);
+                      }
+                    });
+                }
               });
+            } else if (node.matches(window.MessageHandler.selectors.messages.join(','))) {
+              // 如果节点本身是消息元素
+              const text = node.textContent?.trim();
+              if (text) {
+                window.MessageHandler.processMessage(text, node)
+                  .catch(error => {
+                    if (!error.message.includes('Extension context invalidated')) {
+                      console.error('Telegram Monitor: Error processing message:', error);
+                    }
+                  });
+              }
             }
           }
         }
       }
     } catch (error) {
-      console.error('Telegram Monitor: Error in mutation observer:', error);
+      if (!error.message.includes('Extension context invalidated')) {
+        console.error('Telegram Monitor: Error in mutation observer:', error);
+      }
     }
   });
 
@@ -127,7 +153,7 @@ function setupObserver(container) {
     characterData: true
   });
   
-  console.log('Telegram Monitor: Observer started');
+  window.ErrorHandler.Logger.info('Observer started');
 }
 
 // 辅助函数：重试初始化
@@ -137,11 +163,13 @@ function retryInitialization() {
   setTimeout(window.initMonitor, window.RETRY_INTERVAL);
 }
 
-// 修改启动逻辑
+// 修改初始化逻辑
 (async function initializeExtension() {
   try {
+    console.log('Telegram Monitor: Starting initialization...');
+
     // 等待所有模块加载完成
-    for (let i = 0; i < 10; i++) { // 最多尝试10次
+    for (let i = 0; i < 10; i++) {
       if (window.ErrorHandler && window.StateManager && 
           window.EventHandler && window.MessageHandler) {
         break;
@@ -155,20 +183,39 @@ function retryInitialization() {
       throw new Error('Required modules not loaded');
     }
 
-    console.log('Telegram Monitor: Content script loaded at:', new Date().toLocaleString());
-
-    // 直接初始化各个模块，不使用 withContext
-    try {
-      // 先初始化状态管理
-      await window.StateManager.init();
-      // 然后初始化事件处理
-      await window.EventHandler.init();
-      
-      console.log('Telegram Monitor: Extension initialized successfully');
-    } catch (initError) {
-      console.error('Telegram Monitor: Error during module initialization:', initError);
-      throw initError;
+    // 等待页面完全加载
+    if (document.readyState !== 'complete') {
+      await new Promise(resolve => window.addEventListener('load', resolve, { once: true }));
     }
+
+    // 等待 Telegram Web 加载完成
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // 初始化各个模块
+    await window.StateManager.init();
+    await window.EventHandler.init();
+
+    // 激活监控并执行初始扫描
+    window.isMonitoringActive = true;
+    window.isMonitoring = false; // 确保重新初始化
+    window.processedMessages.clear(); // 清除旧消息记录
+
+    // 立即执行一次扫描
+    const messages = document.querySelectorAll(
+      window.MessageHandler.selectors.messages.join(',')
+    );
+
+    console.log('Telegram Monitor: Found messages:', messages.length);
+
+    if (messages.length > 0) {
+      const matchedMessages = await window.MessageHandler.processMessages(messages, true);
+      console.log('Telegram Monitor: Initial scan found matches:', matchedMessages.length);
+    }
+
+    // 启动监控
+    await window.initMonitor();
+    
+    console.log('Telegram Monitor: Extension initialized successfully');
 
   } catch (error) {
     console.error('Error initializing extension:', error);
@@ -210,5 +257,33 @@ window.addEventListener('error', (event) => {
     attemptReconnect();
   }
 });
+
+// 修改 URL 变化检测部分
+const urlCheckInterval = setInterval(() => {
+  const newUrl = window.location.href;
+  if (newUrl !== window.currentUrl) {
+    window.ErrorHandler.Logger.info('URL changed:', {
+      from: window.currentUrl,
+      to: newUrl
+    });
+    window.currentUrl = newUrl;
+    
+    // 清理旧状态
+    if (window.observer) {
+      window.observer.disconnect();
+      window.observer = null;
+    }
+    window.isMonitoring = false;
+    window.processedMessages.clear();
+    
+    // 等待DOM更新后重新初始化
+    setTimeout(() => {
+      if (window.isMonitoringActive) {
+        window.ErrorHandler.Logger.info('Reinitializing monitor after URL change');
+        window.initMonitor();
+      }
+    }, 2000); // 给足够的时间让新页面加载
+  }
+}, 1000);
 
 

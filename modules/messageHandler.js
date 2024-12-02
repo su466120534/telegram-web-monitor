@@ -10,9 +10,16 @@ const MessageHandler = {
       '.message-text',              // 消息文本
       '.text-entity',               // 文本实体
       '.message-text-content',      // 消息文本内容
-      'div[class*="message"]',      // 动态类名的消息
-      'div[class*="text"]',         // 动态类名的文本
-      '.bubble'                     // 消息气泡
+      'div[class*="message"]:not([class*="group"])',      // 动态类名的消息
+      'div[class*="text"]:not([class*="meta"])',         // 动态类名的文本
+      'div[class*="Message"]:not([class*="group"])',
+      '.messages-container .Message',
+      '.chat-content .Message',
+      '.history .Message',
+      '.bubble:not(.service-message)',
+      '.message-list-item:not(.service-message)',
+      '.dialog-message:not(.service-message)',
+      '.chat-message:not(.service-message)'
     ],
     sender: [
       '.sender-name',
@@ -75,46 +82,46 @@ const MessageHandler = {
 
     try {
       await window.ErrorHandler.withContext(async () => {
-        if (isBatchScan) {
-          await this.waitForDialogsLoad();
+        // 获取当前活动的聊天窗口
+        const activeChat = document.querySelector('.chat-content, .messages-container, .history');
+        if (!activeChat) {
+          window.ErrorHandler.Logger.debug('No active chat found');
+          return [];
         }
 
-        window.ErrorHandler.Logger.debug('Starting message scan:', {
-          messageCount: messages.length,
-          isBatchScan
+        // 获取所有消息元素
+        const allMessages = Array.from(activeChat.querySelectorAll(this.selectors.messages.join(',')))
+          // 过滤掉服务消息和系统消息
+          .filter(el => !el.classList.contains('service-message') && 
+                       !el.classList.contains('system-message') &&
+                       !el.closest('.service-message, .system-message'));
+
+        window.ErrorHandler.Logger.debug('Found messages:', {
+          total: allMessages.length,
+          container: activeChat.className
         });
 
-        // 获取所有消息元素
-        const messageElements = Array.from(messages).reduce((acc, container) => {
-          // 如果容器本身是消息元素，直接添加
-          if (container.matches(this.selectors.messages.join(','))) {
-            acc.push(container);
-          }
-          // 查找容器内的消息元素
-          const messageContents = container.querySelectorAll(this.selectors.messages.join(','));
-          if (messageContents.length > 0) {
-            acc.push(...messageContents);
-          }
-          return acc;
-        }, []);
-
-        // 处理每个消息元素
-        for (const messageElement of messageElements) {
+        // 处理每个消息
+        for (const messageElement of allMessages) {
           try {
-            // 获取消息文本
-            let text = messageElement.textContent?.trim();
+            // 获取消息文本内容
+            let text = '';
+            const textElements = messageElement.querySelectorAll('.text-content, .message-text, .text-entity');
             
-            // 如果消息元素本身没有文本，尝试查找子元素
-            if (!text) {
-              const textElement = messageElement.querySelector('.text-content, .message-text, .text-entity');
-              if (textElement) {
-                text = textElement.textContent?.trim();
-              }
+            if (textElements.length > 0) {
+              // 如果找到文本元素，使用它们的内容
+              text = Array.from(textElements)
+                .map(el => el.textContent?.trim())
+                .filter(Boolean)
+                .join(' ');
+            } else {
+              // 否则使用消息元素自身的文本内容
+              text = messageElement.textContent?.trim();
             }
 
             if (!text) continue;
 
-            // 清理文本内容
+            // 清理和处理文本
             const cleanedText = this.cleanMessageText(text);
             if (!cleanedText) continue;
 
@@ -128,23 +135,16 @@ const MessageHandler = {
               matchedMessages.add(JSON.stringify(result));
             }
           } catch (error) {
-            if (error.message === 'Extension context invalidated') {
-              throw error;
-            }
             window.ErrorHandler.Logger.debug('Error processing message:', error);
             continue;
           }
         }
 
-        window.ErrorHandler.Logger.info('Scan complete:', {
-          scanned: messageElements.length,
-          matched: matchedMessages.size,
-          time: new Date().toLocaleString()
-        });
-
+        // 处理匹配结果
         const results = Array.from(matchedMessages).map(msg => JSON.parse(msg));
         if (results.length > 0) {
           window.lastProcessedTime = currentTime;
+          window.ErrorHandler.Logger.info('Found matches:', results.length);
         }
 
         return results;
@@ -152,10 +152,6 @@ const MessageHandler = {
 
       return Array.from(matchedMessages).map(msg => JSON.parse(msg));
     } catch (error) {
-      if (error.message === 'Extension context invalidated') {
-        window.ErrorHandler.Logger.debug('Extension context lost during message processing');
-        return [];
-      }
       window.ErrorHandler.Logger.error('Error in batch message processing:', error);
       return [];
     }
@@ -163,14 +159,29 @@ const MessageHandler = {
 
   // 匹配关键词
   async matchKeywords(text, keywords) {
-    const normalizedText = text.toLowerCase();
+    // 启用调试日志
+    window.ErrorHandler.Logger.setDebugMode(true);
+
+    window.ErrorHandler.Logger.debug('Starting keyword match:', {
+      text: text.substring(0, 100),
+      keywords: keywords
+    });
+
     let matched = false;
     let matchedKeyword = '';
+
+    const normalizedText = text.toLowerCase();
 
     // 先检查组合关键词
     for (const keyword of keywords) {
       if (keyword.includes(' ')) {
         const parts = keyword.split(' ').filter(k => k.trim());
+        window.ErrorHandler.Logger.debug('Checking combined keyword:', {
+          keyword,
+          parts
+        });
+
+        // 简化组合关键词匹配逻辑
         const allPartsMatch = parts.every(part => 
           normalizedText.includes(part.toLowerCase())
         );
@@ -178,6 +189,10 @@ const MessageHandler = {
         if (allPartsMatch) {
           matched = true;
           matchedKeyword = keyword;
+          window.ErrorHandler.Logger.debug('Combined keyword matched:', {
+            keyword,
+            text: text.substring(0, 100)
+          });
           break;
         }
       }
@@ -187,14 +202,27 @@ const MessageHandler = {
     if (!matched) {
       for (const keyword of keywords) {
         if (!keyword.includes(' ')) {
+          window.ErrorHandler.Logger.debug('Checking single keyword:', keyword);
+
+          // 简化单个关键词匹配逻辑
           if (normalizedText.includes(keyword.toLowerCase())) {
             matched = true;
             matchedKeyword = keyword;
+            window.ErrorHandler.Logger.debug('Single keyword matched:', {
+              keyword,
+              text: text.substring(0, 100)
+            });
             break;
           }
         }
       }
     }
+
+    window.ErrorHandler.Logger.debug('Match result:', {
+      matched,
+      matchedKeyword,
+      text: text.substring(0, 100)
+    });
 
     return { matched, matchedKeyword };
   },
@@ -253,32 +281,16 @@ const MessageHandler = {
 
   // 检查消息是否已处理
   isMessageProcessed(text, timestamp) {
-    // 移除重复的时间戳和日期
-    const cleanedText = text
-      .replace(/(\d{1,2}:\d{2}\s*(?:AM|PM))\s*\1/gi, '$1')  // 移除重复的时间
-      .replace(/(\d{4}\/\d{1,2}\/\d{1,2}|\d{1,2}\/\d{1,2}\/\d{4})\s*\1/g, '$1')  // 移除重复的日期
-      .replace(/(Today|Yesterday)\s*\1/gi, '$1')  // 移除重复的日期词
-      .replace(/\s+/g, ' ')  // 压缩空格
-      .trim();
-
     // 生成消息唯一标识
-    const messageKey = this.generateMessageKey(cleanedText, timestamp);
+    const messageKey = this.generateMessageKey(text, timestamp);
 
     // 检查是否已处理过
     if (window.processedMessages.has(messageKey)) {
-      window.ErrorHandler.Logger.debug('Message already processed:', {
-        key: messageKey,
-        preview: cleanedText.substring(0, 50)
-      });
       return true;
     }
 
-    // 检查是否是旧消息
-    if (timestamp < window.lastProcessedTime - 60000) { // 1分钟内的消息才处理
-      window.ErrorHandler.Logger.debug('Skipping old message:', {
-        timestamp,
-        lastProcessed: window.lastProcessedTime
-      });
+    // 检查是否是旧消息（超过5分钟的消息不处理）
+    if (timestamp < Date.now() - 300000) {
       return true;
     }
 
@@ -373,37 +385,66 @@ const MessageHandler = {
 
   // 格式化通知消息
   formatNotification(result) {
-    const truncatedText = result.text.length > 100 ? 
-      result.text.substring(0, 97) + '...' : 
-      result.text;
+    // 在消息中高亮显示匹配的关键词
+    let highlightedText = result.text;
+    if (result.matchedKeyword) {
+      // 如果是组合关键词，分别高亮每个部分
+      const parts = result.matchedKeyword.split(' ');
+      parts.forEach(part => {
+        const regex = new RegExp(this.escapeRegExp(part), 'gi');
+        highlightedText = highlightedText.replace(regex, '**$&**');
+      });
+    }
+
+    const truncatedText = highlightedText.length > 100 ? 
+      highlightedText.substring(0, 97) + '...' : 
+      highlightedText;
 
     return {
-      type: 'basic',
-      title: '🔍 Keyword Match Found',
-      message: [
-        `👤 From: ${result.info.sender}`,
-        `💬 Message: ${truncatedText}`,
-        `🕒 Time: ${result.info.timestamp}`
-      ].join('\n'),
-      requireInteraction: true
+      notification: {
+        type: 'basic',
+        title: `🔍 Matched: "${result.matchedKeyword}"`,
+        message: truncatedText,
+        requireInteraction: true
+      },
+      popup: {
+        text: truncatedText,
+        timestamp: result.timestamp,
+        keyword: result.matchedKeyword,
+        originalText: result.text
+      }
     };
   },
 
   // 发送通知到后台
   async sendNotification(options) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({
-        type: 'showNotification',
-        options: options,
-        isBatchScan: false
-      }, response => {
-        if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
-        } else {
-          resolve(response);
-        }
+    try {
+      // 发送系统通知
+      await window.ErrorHandler.withContext(async () => {
+        await chrome.runtime.sendMessage({
+          type: 'showNotification',
+          options: options.notification,
+          isBatchScan: false
+        });
+      }, 'sendSystemNotification');
+
+      // 发送到 popup 页面
+      await window.ErrorHandler.withContext(async () => {
+        await chrome.runtime.sendMessage({
+          type: 'addMessage',
+          message: options.popup
+        });
+      }, 'sendPopupMessage');
+
+      window.ErrorHandler.Logger.debug('Notifications sent successfully');
+    } catch (error) {
+      // 记录错误但不中断执行
+      window.ErrorHandler.Logger.debug('Error sending notification:', {
+        error: error.message || error.toString(),
+        stack: error.stack,
+        options: JSON.stringify(options)
       });
-    });
+    }
   },
 
   // 添加等待对话列表加载完成的方法
