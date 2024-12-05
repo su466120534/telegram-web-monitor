@@ -286,4 +286,39 @@ const urlCheckInterval = setInterval(() => {
   }
 }, 1000);
 
+// 定期执行全量扫描
+setInterval(async () => {
+  try {
+    if (!window.isMonitoringActive) return;
+    
+    window.ErrorHandler.Logger.info('Performing periodic full scan');
+    
+    // 获取当前活动的聊天窗口
+    const activeChat = document.querySelector('.chat-content, .messages-container, .history');
+    if (!activeChat) {
+      window.ErrorHandler.Logger.debug('No active chat found during full scan');
+      return;
+    }
+    
+    // 只获取最近的30条消息
+    const allMessages = Array.from(
+      activeChat.querySelectorAll(window.MessageHandler.selectors.messages.join(','))
+    ).filter(el => !el.classList.contains('service-message') && 
+             !el.classList.contains('system-message'));
+    
+    const recentMessages = allMessages.slice(-30);
+    
+    if (recentMessages.length > 0) {
+      window.ErrorHandler.Logger.debug('Full scan found messages:', {
+        total: allMessages.length,
+        processing: recentMessages.length
+      });
+      
+      await window.MessageHandler.processMessages(recentMessages, true);
+    }
+  } catch (error) {
+    window.ErrorHandler.Logger.error('Error in periodic scan:', error);
+  }
+}, window.FULL_SCAN_INTERVAL);
+
 

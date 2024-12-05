@@ -31,6 +31,10 @@ const MessageHandler = {
     ]
   },
 
+  // 现有的属性...
+  recentNotifications: new Set(), // 存储最近的通知内容
+  MAX_NOTIFICATIONS: 30,  // 最多保存30条通知记录
+
   // 处理单条消息
   async processMessage(text, node = null, timestamp = Date.now()) {
     if (!text || !window.isMonitoringActive) {
@@ -101,8 +105,11 @@ const MessageHandler = {
           container: activeChat.className
         });
 
+        // 只处理最近的30条消息
+        const recentMessages = allMessages.slice(-30);
+        
         // 处理每个消息
-        for (const messageElement of allMessages) {
+        for (const messageElement of recentMessages) {
           try {
             // 获取消息文本内容
             let text = '';
@@ -284,13 +291,22 @@ const MessageHandler = {
     // 生成消息唯一标识
     const messageKey = this.generateMessageKey(text, timestamp);
 
+    // 添加调试日志
+    window.ErrorHandler.Logger.debug('Processing check:', {
+      key: messageKey,
+      processed: window.processedMessages.has(messageKey),
+      processedCount: window.processedMessages.size,
+      textSample: text.substring(0, 50)
+    });
+
     // 检查是否已处理过
     if (window.processedMessages.has(messageKey)) {
       return true;
     }
 
     // 检查是否是旧消息（超过5分钟的消息不处理）
-    if (timestamp < Date.now() - 300000) {
+    const messageAge = Date.now() - timestamp;
+    if (messageAge > 300000) {  // 5分钟
       return true;
     }
 
@@ -375,9 +391,30 @@ const MessageHandler = {
   // 发送通知
   async notifyMatch(result) {
     try {
+      // 生成通知内容的唯一标识
+      const notificationKey = `${result.text}_${result.matchedKeyword}`;
+      
+      // 检查是否是重复通知
+      if (this.recentNotifications.has(notificationKey)) {
+        window.ErrorHandler.Logger.debug('Skipping duplicate notification:', {
+          text: result.text.substring(0, 50),
+          keyword: result.matchedKeyword
+        });
+        return;
+      }
+
+      // 添加到最近通知集合
+      this.recentNotifications.add(notificationKey);
+
+      // 如果通知数量超过限制，删除最早的通知
+      if (this.recentNotifications.size > this.MAX_NOTIFICATIONS) {
+        const notifications = Array.from(this.recentNotifications);
+        this.recentNotifications = new Set(notifications.slice(-this.MAX_NOTIFICATIONS));
+      }
+
+      // 发送通知
       const formattedMessage = this.formatNotification(result);
       await this.sendNotification(formattedMessage);
-      window.lastProcessedTime = result.timestamp;
     } catch (error) {
       window.ErrorHandler.Logger.error('Error sending notification:', error);
     }
